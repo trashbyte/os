@@ -8,7 +8,7 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, serial_println};
+use os::{println, serial_println, format_u32_as_bin_spaced};
 use bootloader::{BootInfo, entry_point};
 use os::acpi::OsAcpiHandler;
 use acpi::parse_rsdp;
@@ -16,6 +16,7 @@ use aml::AmlContext;
 use acpi::interrupt::InterruptModel::Apic;
 use alloc::vec::Vec;
 use os::pci::PciClass;
+use os::driver::ahci::HbaMemory;
 
 
 #[cfg(not(test))]
@@ -48,10 +49,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("Brute force scanning for PCI devices...");
     let mut pci_infos = Vec::new();
     os::pci::brute_force_scan(&mut pci_infos);
-    println!("Storage devices:");
-    for info in pci_infos.iter().filter(|x| { x.class() == PciClass::MassStorage }) {
-        println!("{}", info);
-    }
+    let ahci_controller_info = pci_infos.iter()
+        .filter(|x| { x.class() == PciClass::MassStorage })
+        .next()
+        .expect("No AHCI controller found.");
+    println!("AHCI Controller PCI Info");
+    println!("{}", ahci_controller_info);
+
+    let ahci_hba_mem = unsafe { &mut *(((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64 + phys_mem_offset.as_u64()) as *mut HbaMemory) };
+    println!("Ports implemented: {}", format_u32_as_bin_spaced(ahci_hba_mem.port_implemented));
+    let port0 = &ahci_hba_mem.port_registers[0];
+    println!("Port 0 device type: {:?}", port0.device_type());
 
     const RDSP_HEADER: u64 = 0x2052545020445352;
     let mut rdsp_addr = None;

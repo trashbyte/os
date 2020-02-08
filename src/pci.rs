@@ -99,14 +99,14 @@ impl PciFullClass {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct PciDeviceInfo {
-    device: u8,
-    bus: u8,
-    device_id: u16,
-    vendor_id: u16,
-    full_class: PciFullClass,
-    header_type: u8,
-    bars: [u32; 6],
-    supported_fns: [bool; 8],
+    pub device: u8,
+    pub bus: u8,
+    pub device_id: u16,
+    pub vendor_id: u16,
+    pub full_class: PciFullClass,
+    pub header_type: u8,
+    pub bars: [u32; 6],
+    pub supported_fns: [bool; 8],
 }
 impl PciDeviceInfo {
     pub fn class(&self) -> PciClass {
@@ -195,12 +195,6 @@ fn check_device(bus: u8, device: u8) -> Option<PciDeviceInfo> {
     bars[4] = pci_config_read(bus, device, 0, 0x20);
     bars[5] = pci_config_read(bus, device, 0, 0x24);
 
-//    if class & 0xFFFF == 0x0106 {
-//        println!(" AHCI base addr: {:#010X}", bars[5]);
-//        let val = unsafe { *((bars[5] as u64) as *const u32) as u32 };
-//        println!(" value: {:#010X}", val);
-//    }
-
     Some(PciDeviceInfo {
         device, bus, device_id, vendor_id,
         full_class: pci_class,
@@ -210,13 +204,13 @@ fn check_device(bus: u8, device: u8) -> Option<PciDeviceInfo> {
     })
 }
 
-fn pci_config_read (bus: u8, slot: u8, func: u8, offset: u8) -> u32 {
+fn pci_config_read (bus: u8, device: u8, func: u8, offset: u8) -> u32 {
     let bus = bus as u32;
-    let slot = slot as u32;
+    let device = device as u32;
     let func = func as u32;
     let offset = offset as u32;
     // construct address param
-    let address = ((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xfc) | 0x80000000) as u32;
+    let address = ((bus << 16) | (device << 11) | (func << 8) | (offset & 0xfc) | 0x80000000) as u32;
 
     // write address
     let mut port = Port::new(0xCF8);

@@ -22,10 +22,13 @@ pub mod allocator;
 pub mod fs;
 pub mod acpi;
 pub mod pci;
+pub mod driver;
 
 use core::panic::PanicInfo;
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
+use alloc::string::String;
+use alloc::format;
 
 pub fn test_runner(tests: &[&dyn Fn()]) {
     serial_println!("Running {} tests", tests.len());
@@ -94,4 +97,17 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
     }
+}
+
+pub fn format_u32_as_bin_spaced(i: u32) -> String {
+    let mut string = String::new();
+    string += &format!("{:04b} ", (i >> 28) & 0xF);
+    string += &format!("{:04b} ", (i >> 24) & 0xF);
+    string += &format!("{:04b} ", (i >> 20) & 0xF);
+    string += &format!("{:04b} ", (i >> 16) & 0xF);
+    string += &format!("{:04b} ", (i >> 12) & 0xF);
+    string += &format!("{:04b} ", (i >>  8) & 0xF);
+    string += &format!("{:04b} ", (i >>  4) & 0xF);
+    string += &format!("{:04b}",  (i      ) & 0xF);
+    string
 }
