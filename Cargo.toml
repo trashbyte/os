@@ -13,7 +13,7 @@ uart_16550 = "0.2.0"
 pic8259_simple = "0.1.1"
 pc-keyboard = "0.3.1"
 linked_list_allocator = "=0.6.4"
-acpi = "0.6.0"
+acpi_crate = { package = "acpi", version = "0.6.0" }
 aml = "0.6.0"
 
 [dependencies.num]
@@ -35,10 +35,13 @@ features = ["spin_no_std"]
 [package.metadata.bootimage]
 run-command = [
     "qemu-system-x86_64",
+    "-m", "512M",
     "-drive", "format=raw,file=target\\x86_64-custom\\debug\\bootimage-os.bin",
-    "-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
-    "-device", "ahci,id=ahci",
-    "-device", "ide-hd,bus=ahci.0,drive=vdisk",
+    "-drive", "format=raw,file=hdb.img",
+    #"-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
+    #"-device", "ahci,id=ahci",
+    #"-device", "ide-hd,bus=ahci.0,drive=vdisk",
+    #"-fda", "fda.img",
     "-serial", "stdio"
 ]
 #"-display", "none"

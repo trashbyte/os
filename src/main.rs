@@ -8,22 +8,22 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, serial_println, format_u32_as_bin_spaced};
+use os::{println, MemoryInitResults};
 use bootloader::{BootInfo, entry_point};
-use os::acpi::OsAcpiHandler;
-use acpi::parse_rsdp;
-use aml::AmlContext;
-use acpi::interrupt::InterruptModel::Apic;
-use alloc::vec::Vec;
-use os::pci::PciClass;
-use os::driver::ahci::HbaMemory;
+use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
+use x86_64::{VirtAddr, PhysAddr};
+use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
+use os::driver::ahci::{command_header_addr, HbaMemory};
+use os::util::debug_dump_memory;
+use os::driver::ata::{ide_identify, AtaDrive, AtaDrives};
+use os::fs::ext2::read_superblock;
 
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    os::halt_loop()
+    os::util::halt_loop()
 }
 
 #[cfg(test)]
@@ -32,70 +32,94 @@ fn panic(info: &PanicInfo) -> ! {
     os::test_panic_handler(info)
 }
 
+
+
 entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    use x86_64::VirtAddr;
+    let mut mmap_lock = os::memory::GLOBAL_MEMORY_MAP.lock();
+    let mut found_ahci_mem = None;
+    for region in boot_info.memory_map.iter() {
+        if found_ahci_mem.is_none() && region.region_type == MemoryRegionType::Usable &&
+                region.range.end_addr() - region.range.start_addr() >= AHCI_MEMORY_SIZE {
 
-    os::init();
+            let ahci_region = MemoryRegion {
+                range: FrameRange::new(region.range.start_addr(), region.range.start_addr() + AHCI_MEMORY_SIZE),
+                region_type: MemoryRegionType::InUse
+            };
+            let leftover = region.range.end_addr() - region.range.start_addr() - AHCI_MEMORY_SIZE;
+            let leftover_region = MemoryRegion {
+                range: FrameRange::new(region.range.start_addr() + leftover, region.range.end_addr()),
+                region_type: MemoryRegionType::Usable
+            };
 
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let mut mapper = unsafe { os::memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe {
-        os::memory::BootInfoFrameAllocator::init(&boot_info.memory_map)
-    };
-    os::allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialization failed");
+            mmap_lock.add_region(ahci_region);
+            mmap_lock.add_region(leftover_region);
 
-    println!("Brute force scanning for PCI devices...");
-    let mut pci_infos = Vec::new();
-    os::pci::brute_force_scan(&mut pci_infos);
-    let ahci_controller_info = pci_infos.iter()
-        .filter(|x| { x.class() == PciClass::MassStorage })
-        .next()
-        .expect("No AHCI controller found.");
-    println!("AHCI Controller PCI Info");
-    println!("{}", ahci_controller_info);
-
-    let ahci_hba_mem = unsafe { &mut *(((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64 + phys_mem_offset.as_u64()) as *mut HbaMemory) };
-    println!("Ports implemented: {}", format_u32_as_bin_spaced(ahci_hba_mem.port_implemented));
-    let port0 = &ahci_hba_mem.port_registers[0];
-    println!("Port 0 device type: {:?}", port0.device_type());
-
-    const RDSP_HEADER: u64 = 0x2052545020445352;
-    let mut rdsp_addr = None;
-    for i in 0..0x2000-1 {
-        unsafe {
-            let addr = 0x000E0000 + (i * 16) + phys_mem_offset.as_u64();
-            let section = *(addr as *mut u64) as u64;
-            if section == RDSP_HEADER {
-                rdsp_addr = Some(addr);
-            }
+            found_ahci_mem = Some(ahci_region);
+        }
+        else {
+            mmap_lock.add_region(region.clone());
         }
     }
-    if rdsp_addr.is_none() {
-        panic!("Couldn't find RDSP");
+//    for region in mmap_lock.iter() {
+//        serial_println!("{:?}", region);
+//    }
+    drop(mmap_lock);
+    if found_ahci_mem.is_none() {
+        panic!("Failed to find free space for AHCI memory.");
     }
-    let rdsp_phys_addr = rdsp_addr.unwrap() - phys_mem_offset.as_u64();
+    let found_ahci_mem = found_ahci_mem.unwrap().range;
+    for addr in found_ahci_mem.start_addr()..found_ahci_mem.end_addr() {
+        unsafe { *((addr + boot_info.physical_memory_offset) as *mut u8) = 0 }
+    }
 
-    let mut acpi_handler = OsAcpiHandler::new(phys_mem_offset.as_u64());
-    let acpi = parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
-    let apic_slot = acpi.interrupt_model.as_ref().unwrap();
-    let apic;
-    if let Apic(a) = apic_slot {
-        apic = a;
+    os::gdt_idt_init();
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
+    let pci_infos = os::pci_init();
+    os::acpi_init(phys_mem_offset);
+//    let mut ahci_driver = unsafe {
+//        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
+//    };
+
+//    let mut buf = [0u16; 4096];
+//    unsafe {
+//        let mut port = ahci_driver.ports[0].as_mut().unwrap();
+//        os::driver::ahci::test_read(&mut port, 0, 8, (&mut buf) as *mut [u16] as *mut u16).unwrap();
+//    }
+//
+//    for _ in 0..1000000 {}
+//    unsafe {
+//        let addr = ahci_driver.ports[0].as_mut().unwrap().cmd_list_addr.as_u64() + phys_mem_offset.as_u64();
+//        debug_dump_memory(VirtAddr::new(addr), 0x20);
+//    }
+
+    let mut ata_drives = AtaDrives::new();
+    unsafe {
+        if let Some(info) = ide_identify(0, 0) {
+            ata_drives.master0 = Some(AtaDrive::from_identify(info, 0, 0));
+        }
+        if let Some(info) = ide_identify(0, 1) {
+            ata_drives.slave0 = Some(AtaDrive::from_identify(info, 0, 1));
+        }
+        if let Some(info) = ide_identify(1, 0) {
+            ata_drives.master1 = Some(AtaDrive::from_identify(info, 1, 0));
+        }
+        if let Some(info) = ide_identify(1, 1) {
+            ata_drives.slave1 = Some(AtaDrive::from_identify(info, 1, 1));
+        }
     }
-    else {
-        panic!("No APIC found. Current kernel requires APIC.");
-    }
-    let _apic_addr = apic.local_apic_address;
-    let mut aml_context = AmlContext::new();
-    for ssdt in acpi.ssdts.iter() {
-        aml_context.parse_table(unsafe { alloc::slice::from_raw_parts((ssdt.address as u64 + phys_mem_offset.as_u64()) as *const u8, ssdt.length as usize) }).unwrap();
-    }
-    //serial_print!("{:?}", acpi);
+    let mut buffer = [0u8; 512];
+    //unsafe { ata_drives.slave0.as_ref().unwrap().read_sector(&mut buffer, 0); }
+    //unsafe { debug_dump_memory(VirtAddr::new(&buffer as *const u8 as u64), 512); }
+
+    read_superblock(&ata_drives.slave0);
+
+
+    println!("All clear");
 
     #[cfg(test)]
     test_main();
 
-    os::halt_loop()
+    os::util::halt_loop()
 }

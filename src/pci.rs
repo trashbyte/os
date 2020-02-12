@@ -6,6 +6,7 @@ use alloc::format;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+#[repr(C)]
 pub enum PciClass {
     Unclassified = 0x00,
     MassStorage = 0x01,
@@ -29,6 +30,7 @@ impl PciClass {
 
 #[allow(non_camel_case_types, dead_code)]
 #[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+#[repr(C)]
 pub enum PciFullClass {
     Unclassified_NonVgaCompatible = 0x0000,
     Unclassified_VgaCompatible = 0x0001,
@@ -107,6 +109,8 @@ pub struct PciDeviceInfo {
     pub header_type: u8,
     pub bars: [u32; 6],
     pub supported_fns: [bool; 8],
+    pub interrupt_line: u8,
+    pub interrupt_pin: u8,
 }
 impl PciDeviceInfo {
     pub fn class(&self) -> PciClass {
@@ -139,6 +143,7 @@ impl Display for PciDeviceInfo {
             }
         }
         writeln!(f, "]")?;
+        writeln!(f, "    Interrupt line / pin: {} / {}", self.interrupt_line, self.interrupt_pin)?;
         Ok(())
     }
 }
@@ -195,16 +200,20 @@ fn check_device(bus: u8, device: u8) -> Option<PciDeviceInfo> {
     bars[4] = pci_config_read(bus, device, 0, 0x20);
     bars[5] = pci_config_read(bus, device, 0, 0x24);
 
+    let last_row = pci_config_read(bus, device, 0, 0x3C);
+
     Some(PciDeviceInfo {
         device, bus, device_id, vendor_id,
         full_class: pci_class,
         header_type,
         bars,
-        supported_fns
+        supported_fns,
+        interrupt_line: (last_row & 0xFF) as u8,
+        interrupt_pin: ((last_row >> 8) & 0xFF) as u8,
     })
 }
 
-fn pci_config_read (bus: u8, device: u8, func: u8, offset: u8) -> u32 {
+fn pci_config_read(bus: u8, device: u8, func: u8, offset: u8) -> u32 {
     let bus = bus as u32;
     let device = device as u32;
     let func = func as u32;
@@ -219,6 +228,24 @@ fn pci_config_read (bus: u8, device: u8, func: u8, offset: u8) -> u32 {
     // read data
     let mut port = Port::new(0xCFC);
     unsafe { port.read() }
+}
+
+#[allow(dead_code)]
+fn pci_config_write(bus: u8, device: u8, func: u8, offset: u8, value: u32) {
+    let bus = bus as u32;
+    let device = device as u32;
+    let func = func as u32;
+    let offset = offset as u32;
+    // construct address param
+    let address = ((bus << 16) | (device << 11) | (func << 8) | (offset & 0xfc) | 0x80000000) as u32;
+
+    // write address
+    let mut port = Port::new(0xCF8);
+    unsafe { port.write(address); }
+
+    // read data
+    let mut port = Port::new(0xCFC);
+    unsafe { port.write(value) }
 }
 
 fn get_header_type(bus: u8, device: u8, function: u8) -> u8 {

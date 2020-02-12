@@ -23,12 +23,33 @@ pub mod fs;
 pub mod acpi;
 pub mod pci;
 pub mod driver;
+pub mod util;
+pub mod term;
 
 use core::panic::PanicInfo;
+use x86_64::{VirtAddr, PhysAddr};
+
 #[cfg(test)]
-use bootloader::{entry_point, BootInfo};
-use alloc::string::String;
-use alloc::format;
+use bootloader::entry_point;
+use memory::BootInfoFrameAllocator;
+use x86_64::structures::paging::OffsetPageTable;
+use pci::{PciDeviceInfo, PciClass};
+use alloc::vec::Vec;
+//use driver::ahci::HbaMemory;
+use acpi::OsAcpiHandler;
+use acpi_crate::parse_rsdp;
+use acpi_crate::interrupt::InterruptModel;
+use aml::AmlContext;
+use x86_64::instructions::port::Port;
+use core::ops::Range;
+use crate::driver::ahci::AhciDriver;
+use crate::util::halt_loop;
+
+#[inline]
+pub fn phys_mem_offset() -> u64 { unsafe { PHYS_MEM_OFFSET } }
+static mut PHYS_MEM_OFFSET: u64 = 0;
+
+// Test runner /////////////////////////////////////////////////////////////////
 
 pub fn test_runner(tests: &[&dyn Fn()]) {
     serial_println!("Running {} tests", tests.len());
@@ -38,6 +59,8 @@ pub fn test_runner(tests: &[&dyn Fn()]) {
     exit_qemu(QemuExitCode::Success);
 }
 
+// Handlers ////////////////////////////////////////////////////////////////////
+
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
@@ -45,43 +68,155 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     halt_loop()
 }
 
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    test_panic_handler(info)
+}
+
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
+
+// Testing entry point /////////////////////////////////////////////////////////
 
 /// Entry point for `cargo xtest`
 #[cfg(test)]
 #[no_mangle]
 pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
     serial_println!("[failed]\n");
-    init();
+    gdt_idt_init();
     test_main();
-    halt_loop()
+    util::halt_loop()
 }
+
+// Initialization //////////////////////////////////////////////////////////////
 
 /// Basic kernel initialization
 ///
 /// NOTE: We do NOT have a valid heap yet, so nothing here can use `alloc` types.
-pub fn init() {
+pub fn gdt_idt_init() {
     gdt::init();
     interrupts::init_idt();
-    unsafe { interrupts::PICS.lock().initialize() };
+    let mut wait_port: Port<u8> = Port::new(0x80);
+    let mut wait = || unsafe { wait_port.write(0); };
+    let mut pic1_command: Port<u8> = Port::new(0x20);
+    let mut pic1_data: Port<u8> = Port::new(0x21);
+    let mut pic2_command: Port<u8> = Port::new(0xA0);
+    let mut pic2_data: Port<u8> = Port::new(0xA1);
+
+    unsafe {
+        // init command (3 data bytes)
+        pic1_command.write(0x11);
+        wait();
+        pic2_command.write(0x11);
+        wait();
+
+        // interrupt offsets
+        pic1_data.write(0x20);
+        wait();
+        pic2_data.write(0x28);
+        wait();
+
+        // chaining
+        pic1_data.write(4);
+        wait();
+        pic2_data.write(2);
+        wait();
+
+        // mode
+        pic1_data.write(0x01);
+        wait();
+        pic2_data.write(0x01);
+        wait();
+
+        // after init command, mask all interrupts
+//        pic1_data.write(0xFF);
+//        wait();
+//        pic2_data.write(0xFF);
+    }
+
+    //unsafe {
+        // enable APIC
+        //let mut port: Port<u8> = Port::new(0xF0);
+        //let old = port.read();
+        //port.write(old | 0x100);
+    //}
+
     x86_64::instructions::interrupts::enable();
 }
 
-pub fn halt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
+#[allow(dead_code)]
+pub struct MemoryInitResults {
+    pub mapper: OffsetPageTable<'static>,
+    pub frame_allocator: BootInfoFrameAllocator,
+}
+
+pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
+    unsafe { PHYS_MEM_OFFSET =  phys_mem_offset.as_u64(); }
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("heap initialization failed");
+
+    MemoryInitResults { mapper, frame_allocator }
+}
+
+pub fn pci_init() -> Vec<PciDeviceInfo> {
+    let mut pci_infos = Vec::new();
+    pci::brute_force_scan(&mut pci_infos);
+    pci_infos
+}
+
+pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {
+    let ahci_controller_info = pci_infos.iter()
+        .filter(|x| { x.class() == PciClass::MassStorage })
+        .next()
+        .expect("No AHCI controller found.");
+
+    let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
+    let mut driver = AhciDriver::new(ahci_hba_addr, ahci_mem_range);
+    driver.reset();
+    //driver.set_ahci_enable(true);
+    driver.set_interrupt_enable(true);
+    driver
+}
+
+pub fn acpi_init(phys_mem_offset: VirtAddr) {
+    const RDSP_HEADER: u64 = 0x2052545020445352;
+    let mut rdsp_addr = None;
+    for i in 0..0x2000-1 {
+        unsafe {
+            let addr = 0x000E0000 + (i * 16) + phys_mem_offset.as_u64();
+            let section = *(addr as *mut u64) as u64;
+            if section == RDSP_HEADER {
+                rdsp_addr = Some(addr);
+            }
+        }
+    }
+    if rdsp_addr.is_none() {
+        panic!("Couldn't find RDSP");
+    }
+    let rdsp_phys_addr = rdsp_addr.unwrap() - phys_mem_offset.as_u64();
+
+    let mut acpi_handler = OsAcpiHandler::new(phys_mem_offset.as_u64());
+    let acpi = parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
+    let apic_slot = acpi.interrupt_model.as_ref().unwrap();
+    let _apic;
+    if let InterruptModel::Apic(a) = apic_slot {
+        _apic = a;
+    }
+    else {
+        panic!("No APIC found. Current kernel requires APIC.");
+    }
+    let mut aml_context = AmlContext::new();
+    for ssdt in acpi.ssdts.iter() {
+        aml_context.parse_table(unsafe { alloc::slice::from_raw_parts((ssdt.address as u64 + phys_mem_offset.as_u64()) as *const u8, ssdt.length as usize) }).unwrap();
     }
 }
 
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    serial_println!("{:#?}", info);
-    test_panic_handler(info)
-}
+// QEMU ////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -91,23 +226,8 @@ pub enum QemuExitCode {
 }
 
 pub fn exit_qemu(exit_code: QemuExitCode) {
-    use x86_64::instructions::port::Port;
-
     unsafe {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
     }
-}
-
-pub fn format_u32_as_bin_spaced(i: u32) -> String {
-    let mut string = String::new();
-    string += &format!("{:04b} ", (i >> 28) & 0xF);
-    string += &format!("{:04b} ", (i >> 24) & 0xF);
-    string += &format!("{:04b} ", (i >> 20) & 0xF);
-    string += &format!("{:04b} ", (i >> 16) & 0xF);
-    string += &format!("{:04b} ", (i >> 12) & 0xF);
-    string += &format!("{:04b} ", (i >>  8) & 0xF);
-    string += &format!("{:04b} ", (i >>  4) & 0xF);
-    string += &format!("{:04b}",  (i      ) & 0xF);
-    string
 }

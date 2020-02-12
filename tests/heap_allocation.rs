@@ -22,7 +22,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     use memory::BootInfoFrameAllocator;
     use x86_64::VirtAddr;
 
-    os::init();
+    os::gdt_idt_init();
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe {

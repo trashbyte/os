@@ -1,4 +1,4 @@
-use acpi::{AcpiHandler, PhysicalMapping};
+use acpi_crate::{AcpiHandler, PhysicalMapping};
 use core::ptr::NonNull;
 
 pub const ACPI_START: usize = 0x_5555_5555_0000;
