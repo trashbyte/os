@@ -1,4 +1,9 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use num_derive::FromPrimitive;
+
 
 pub const COMMAND_LIST_SIZE: u64 = 1024;
 pub const COMMAND_FIS_SIZE: u64 = 64;

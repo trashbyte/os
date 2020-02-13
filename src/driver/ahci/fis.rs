@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #![allow(dead_code)]
 //! FIS Types
 //!
@@ -7,6 +11,7 @@
 use crate::driver::ahci::constants::AtaCommand;
 use crate::util::BufferWrite;
 use alloc::vec::Vec;
+
 
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]

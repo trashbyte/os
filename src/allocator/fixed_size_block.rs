@@ -1,7 +1,12 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use core::alloc::{Layout, GlobalAlloc};
 use super::Locked;
 use core::{ptr, mem};
 use core::ptr::NonNull;
+
 
 struct ListNode {
     next: Option<&'static mut ListNode>,

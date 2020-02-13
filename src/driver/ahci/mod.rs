@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 //! ## Limitations
 //!
 //! The AHCI specification allows for up to 65535 PRDTs in a command table. This

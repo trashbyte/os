@@ -1,9 +1,15 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use x86_64::{
     structures::paging::{mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
+
 pub mod fixed_size_block;
+
 
 /// A wrapper around spin::Mutex to permit trait implementations.
 pub struct Locked<A> {

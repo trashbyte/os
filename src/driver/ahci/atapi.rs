@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 //use super::HbaPort;
 //use crate::driver::ahci::{PrdEntry, ATA_DEV_BUSY, ATA_DEV_DRQ};
 

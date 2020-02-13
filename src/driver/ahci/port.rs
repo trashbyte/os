@@ -1,9 +1,14 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use x86_64::{PhysAddr, VirtAddr};
 use crate::driver::ahci::constants::{SataSignature, HbaPortPowerState, HbaPortDeviceDetectState, COMMAND_TABLE_SIZE};
 use crate::{phys_mem_offset};
 use core::ptr;
 use crate::driver::ahci::{CommandHeader, CommandTable, command_table_addr, command_list_addr, received_fis_addr, command_header_addr};
 use crate::util::MemoryWrite;
+
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]

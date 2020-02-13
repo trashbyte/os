@@ -1,9 +1,14 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #![allow(dead_code)]
 
 use x86_64::instructions::port::Port;
 use crate::serial_println;
 use core::fmt::Debug;
 use alloc::string::String;
+
 
 #[derive(Debug)]
 pub struct AtaDrives {
