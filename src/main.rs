@@ -8,7 +8,7 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, MemoryInitResults};
+use os::{println, MemoryInitResults, serial_println};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr, PhysAddr};
@@ -16,7 +16,7 @@ use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use os::driver::ahci::{command_header_addr, HbaMemory};
 use os::util::debug_dump_memory;
 use os::driver::ata::{ide_identify, AtaDrive, AtaDrives};
-use os::fs::ext2::read_superblock;
+use os::fs::ext2::{Ext2Filesystem};
 
 
 #[cfg(not(test))]
@@ -113,7 +113,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     //unsafe { ata_drives.slave0.as_ref().unwrap().read_sector(&mut buffer, 0); }
     //unsafe { debug_dump_memory(VirtAddr::new(&buffer as *const u8 as u64), 512); }
 
-    read_superblock(&ata_drives.slave0);
+    unsafe {
+        let ext2_fs = Ext2Filesystem::read_from(&ata_drives.slave0.as_ref().unwrap());
+        serial_println!("{:#?}", ext2_fs);
+    }
 
 
     println!("All clear");
