@@ -5,9 +5,11 @@
 #![allow(dead_code)]
 
 use x86_64::instructions::port::Port;
-use crate::serial_println;
 use core::fmt::Debug;
 use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::vec;
+use num_traits::Float;
 
 
 #[derive(Debug)]
@@ -73,7 +75,8 @@ impl AtaDrive {
         }
     }
 
-    pub unsafe fn read_sector(&self, buf: &mut [u8; 512], lba: u32) {
+    pub unsafe fn read_sector_to_slice(&self, buf: &mut [u8], lba: u32) {
+        assert_eq!(buf.len(), 512);
         self.select();
         /* We only support 28bit LBA so far */
         let cmd = match self.drive_num {
@@ -106,6 +109,12 @@ impl AtaDrive {
             buf[i*2+1] = ((double >> 8) & 0xFF) as u8;
         }
         ide_400ns_delay();
+    }
+
+    pub unsafe fn read_sector_to_vec(&self, sector: u32) -> Vec<u8> {
+        let mut output = vec![0u8; 512];
+        self.read_sector_to_slice(&mut output, sector);
+        output
     }
 
     unsafe fn ata_write_sector(&self, data: [u8; 512], lba: u32) {
@@ -169,6 +178,12 @@ impl AtaDrive {
 
     pub unsafe fn check_error(&self) -> u8 {
         Port::new(self.io + ATA_REG_ERROR).read()
+    }
+
+    // Associated functions ////////////////////////////////////////////////////
+
+    pub fn sector_containing_addr(addr: u64) -> u32 {
+        (addr as f64 / 512.0).floor() as u32
     }
 }
 

@@ -90,4 +90,34 @@ pub unsafe fn debug_dump_memory(addr: VirtAddr, size: u32) {
         }
         serial_print!("{:02X} ", data[i as usize]);
     }
+    serial_print!("\n");
+}
+
+pub unsafe fn read_c_str(addr: VirtAddr) -> String {
+    let mut string = String::new();
+    let mut i = 0;
+    loop {
+        let ptr = (addr.as_u64() + i) as *const char;
+        if *ptr == '\0' { break; }
+        string.push(*ptr);
+        i += 1;
+    }
+    string
+}
+
+pub unsafe fn read_c_str_with_len(addr: VirtAddr, len: usize) -> String {
+    let mut string = String::new();
+    let mut i = 0;
+    loop {
+        let ptr = *((addr.as_u64() + i) as *const u8) as char;
+        if ptr == '\0' || i == len as u64 { break; }
+        string.push(ptr);
+        i += 1;
+    }
+    string
+}
+
+#[allow(non_camel_case_types)]
+pub struct ISO_8859_1 {
+    
 }

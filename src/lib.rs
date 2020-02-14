@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #![no_std]
 
 #![feature(custom_test_frameworks)]
@@ -25,6 +29,7 @@ pub mod pci;
 pub mod driver;
 pub mod util;
 pub mod term;
+pub mod encoding;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};

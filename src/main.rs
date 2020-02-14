@@ -12,13 +12,11 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, MemoryInitResults, serial_println};
+use os::{println, MemoryInitResults};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
-use x86_64::{VirtAddr, PhysAddr};
+use x86_64::{VirtAddr};
 use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
-use os::driver::ahci::{command_header_addr, HbaMemory};
-use os::util::debug_dump_memory;
 use os::driver::ata::{ide_identify, AtaDrive, AtaDrives};
 use os::fs::ext2::{Ext2Filesystem};
 
@@ -80,7 +78,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     os::gdt_idt_init();
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
-    let pci_infos = os::pci_init();
+    /*let pci_infos =*/ os::pci_init();
     os::acpi_init(phys_mem_offset);
 //    let mut ahci_driver = unsafe {
 //        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
@@ -113,15 +111,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             ata_drives.slave1 = Some(AtaDrive::from_identify(info, 1, 1));
         }
     }
-    let mut buffer = [0u8; 512];
-    //unsafe { ata_drives.slave0.as_ref().unwrap().read_sector(&mut buffer, 0); }
-    //unsafe { debug_dump_memory(VirtAddr::new(&buffer as *const u8 as u64), 512); }
-
     unsafe {
-        let ext2_fs = Ext2Filesystem::read_from(&ata_drives.slave0.as_ref().unwrap());
-        serial_println!("{:#?}", ext2_fs);
+        let drive_ref = &ata_drives.slave0.as_ref().unwrap();
+        let ext2_fs = Ext2Filesystem::read_from(drive_ref).unwrap();
+        ext2_fs.test(drive_ref);
     }
-
 
     println!("All clear");
 
