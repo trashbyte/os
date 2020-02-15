@@ -12,13 +12,11 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, MemoryInitResults};
+use os::{println, print, MemoryInitResults};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
 use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
-use os::driver::ata::{ide_identify, AtaDrive, AtaDrives};
-use os::fs::ext2::{Ext2Filesystem};
 
 
 #[cfg(not(test))]
@@ -79,7 +77,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
     /*let pci_infos =*/ os::pci_init();
-    os::acpi_init(phys_mem_offset);
+    os::acpi_init();
 //    let mut ahci_driver = unsafe {
 //        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
 //    };
@@ -96,28 +94,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 //        debug_dump_memory(VirtAddr::new(addr), 0x20);
 //    }
 
-    let mut ata_drives = AtaDrives::new();
-    unsafe {
-        if let Some(info) = ide_identify(0, 0) {
-            ata_drives.master0 = Some(AtaDrive::from_identify(info, 0, 0));
-        }
-        if let Some(info) = ide_identify(0, 1) {
-            ata_drives.slave0 = Some(AtaDrive::from_identify(info, 0, 1));
-        }
-        if let Some(info) = ide_identify(1, 0) {
-            ata_drives.master1 = Some(AtaDrive::from_identify(info, 1, 0));
-        }
-        if let Some(info) = ide_identify(1, 1) {
-            ata_drives.slave1 = Some(AtaDrive::from_identify(info, 1, 1));
-        }
-    }
-    unsafe {
-        let drive_ref = &ata_drives.slave0.as_ref().unwrap();
-        let ext2_fs = Ext2Filesystem::read_from(drive_ref).unwrap();
-        ext2_fs.test(drive_ref);
-    }
+    os::service::DISK_SERVICE.lock().init();
+    os::service::FS_SERVICE.lock().init();
 
-    println!("All clear");
+    print!("\n> ");
 
     #[cfg(test)]
     test_main();

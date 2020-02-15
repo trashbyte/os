@@ -28,8 +28,10 @@ pub mod acpi;
 pub mod pci;
 pub mod driver;
 pub mod util;
-pub mod term;
 pub mod encoding;
+pub mod path;
+pub mod shell;
+pub mod service;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
@@ -40,7 +42,6 @@ use memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
 use pci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
-//use driver::ahci::HbaMemory;
 use acpi::OsAcpiHandler;
 use acpi_crate::parse_rsdp;
 use acpi_crate::interrupt::InterruptModel;
@@ -50,9 +51,8 @@ use core::ops::Range;
 use crate::driver::ahci::AhciDriver;
 use crate::util::halt_loop;
 
-#[inline]
-pub fn phys_mem_offset() -> u64 { unsafe { PHYS_MEM_OFFSET } }
-static mut PHYS_MEM_OFFSET: u64 = 0;
+pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
+pub const KERNEL_STACK_ADDR: u64 = 0xFFFF00000000;
 
 // Test runner /////////////////////////////////////////////////////////////////
 
@@ -159,7 +159,6 @@ pub struct MemoryInitResults {
 }
 
 pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
-    unsafe { PHYS_MEM_OFFSET =  phys_mem_offset.as_u64(); }
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
     allocator::init_heap(&mut mapper, &mut frame_allocator)
@@ -188,12 +187,12 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u6
     driver
 }
 
-pub fn acpi_init(phys_mem_offset: VirtAddr) {
+pub fn acpi_init() {
     const RDSP_HEADER: u64 = 0x2052545020445352;
     let mut rdsp_addr = None;
     for i in 0..0x2000-1 {
         unsafe {
-            let addr = 0x000E0000 + (i * 16) + phys_mem_offset.as_u64();
+            let addr = 0x000E0000 + (i * 16) + PHYS_MEM_OFFSET;
             let section = *(addr as *mut u64) as u64;
             if section == RDSP_HEADER {
                 rdsp_addr = Some(addr);
@@ -203,9 +202,9 @@ pub fn acpi_init(phys_mem_offset: VirtAddr) {
     if rdsp_addr.is_none() {
         panic!("Couldn't find RDSP");
     }
-    let rdsp_phys_addr = rdsp_addr.unwrap() - phys_mem_offset.as_u64();
+    let rdsp_phys_addr = rdsp_addr.unwrap() - PHYS_MEM_OFFSET;
 
-    let mut acpi_handler = OsAcpiHandler::new(phys_mem_offset.as_u64());
+    let mut acpi_handler = OsAcpiHandler::new(PHYS_MEM_OFFSET);
     let acpi = parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
     let apic_slot = acpi.interrupt_model.as_ref().unwrap();
     let _apic;
@@ -217,7 +216,7 @@ pub fn acpi_init(phys_mem_offset: VirtAddr) {
     }
     let mut aml_context = AmlContext::new();
     for ssdt in acpi.ssdts.iter() {
-        aml_context.parse_table(unsafe { alloc::slice::from_raw_parts((ssdt.address as u64 + phys_mem_offset.as_u64()) as *const u8, ssdt.length as usize) }).unwrap();
+        aml_context.parse_table(unsafe { alloc::slice::from_raw_parts((ssdt.address as u64 + PHYS_MEM_OFFSET) as *const u8, ssdt.length as usize) }).unwrap();
     }
 }
 

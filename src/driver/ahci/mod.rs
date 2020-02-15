@@ -24,7 +24,7 @@ pub mod constants;
 pub mod port;
 
 use crate::driver::ahci::fis::{FisRegisterHostToDevice, Fis};
-use crate::{phys_mem_offset};
+use crate::{PHYS_MEM_OFFSET};
 
 use volatile::Volatile;
 use core::ops::Range;
@@ -45,7 +45,7 @@ pub struct AhciDriver {
 }
 impl AhciDriver {
     pub unsafe fn new(hba_memory_addr: PhysAddr, ahci_mem_range: Range<u64>) -> Self {
-        let hba_memory = &mut *((hba_memory_addr.as_u64() + phys_mem_offset()) as *mut HbaMemory);
+        let hba_memory = &mut *((hba_memory_addr.as_u64() + PHYS_MEM_OFFSET) as *mut HbaMemory);
         let mut ports = [None; 32];
         let ports_implemented = hba_memory.port_implemented.read();
         for i in 0..32 {
@@ -334,7 +334,7 @@ pub struct HbaCommandList {
 impl HbaCommandList {
     pub fn new(base_addr: VirtAddr) -> Self {
         Self {
-            base_address_phys: PhysAddr::new(base_addr.as_u64() - phys_mem_offset()),
+            base_address_phys: PhysAddr::new(base_addr.as_u64() - PHYS_MEM_OFFSET),
             base_address_virt: base_addr,
             headers: [None; 32],
         }
@@ -371,7 +371,7 @@ pub struct HbaMemory {
 
 /// Start command engine
 unsafe fn start_cmd(port_base_addr: PhysAddr) {
-    let command_and_status_addr = port_base_addr.as_u64() + 0x18 + phys_mem_offset();
+    let command_and_status_addr = port_base_addr.as_u64() + 0x18 + PHYS_MEM_OFFSET;
     // Wait until CR (bit15) is cleared
     while (ptr::read_volatile(command_and_status_addr as *const u32) & HbaPxCMDBit::CmdListRunning.as_u32()) != 0 {}
 
@@ -382,7 +382,7 @@ unsafe fn start_cmd(port_base_addr: PhysAddr) {
 
 /// Stop command engine
 unsafe fn stop_cmd(port_base_addr: PhysAddr) {
-    let command_and_status_addr = port_base_addr.as_u64() + 0x18 + phys_mem_offset();
+    let command_and_status_addr = port_base_addr.as_u64() + 0x18 + PHYS_MEM_OFFSET;
     // Clear ST (bit0) and FRE (bit4)
     let old = ptr::read_volatile(command_and_status_addr as *const u32);
     ptr::write_volatile(command_and_status_addr as *mut u32, old & !(HbaPxCMDBit::Start.as_u32()) & !(HbaPxCMDBit::FisReceiveEnable.as_u32()));

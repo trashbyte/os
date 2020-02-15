@@ -205,7 +205,7 @@ extern "x86-interrupt" fn disk_irq_handler(_frame: &mut InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_frame: &mut InterruptStackFrame) {
-    print!(".");
+    //print!(".");
     unsafe { Port::<u8>::new(0x20).write(0x20); }
 }
 
@@ -225,7 +225,15 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: &mut InterruptStack
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                DecodedKey::Unicode(character) => print!("{}", character),
+                DecodedKey::Unicode(character) => {
+                    print!("{}", character);
+                    if character == '\n' {
+                        (*crate::shell::SHELL.lock()).submit();
+                    }
+                    else {
+                        (*crate::shell::SHELL.lock()).add_char(character);
+                    }
+                },
                 DecodedKey::RawKey(key) => print!("{:?}", key),
             }
         }

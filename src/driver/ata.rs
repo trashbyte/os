@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 use alloc::vec;
 use num_traits::Float;
 
-
 #[derive(Debug)]
 pub struct AtaDrives {
     pub master0: Option<AtaDrive>,

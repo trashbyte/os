@@ -1,15 +1,16 @@
 #![allow(dead_code)]
 
 use crate::driver::ata::AtaDrive;
-use crate::serial_println;
 use num_traits::float::Float;
 use core::fmt::{Debug};
 use alloc::string::String;
-use alloc::{format, vec};
+use alloc::{vec};
 use crate::encoding::InvalidCharPolicy;
 use alloc::vec::Vec;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use crate::path::Path;
+use crate::util::UUID;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Ext2FsState {
@@ -69,8 +70,8 @@ pub struct Ext2JournalInfo {
 
 #[derive(Debug, Clone)]
 pub struct Ext2Filesystem {
-    pub filesystem_id_str: String,
-    pub journal_id_str: String,
+    pub filesystem_id: UUID,
+    pub journal_id: UUID,
     pub volume_name: String,
     pub last_mounted_path: String,
     pub total_inodes: u32,
@@ -121,22 +122,6 @@ impl Ext2Filesystem {
         }
         let header_ext = (*(&buffer[0x54..0xEC] as *const [u8] as *const SuperblockHeaderExtended)).clone();
 
-        let mut filesystem_id_str = String::new();
-        for (i, b) in header_ext.filesystem_id.iter().enumerate() {
-            filesystem_id_str.push_str(&format!("{:02X}", b));
-            if i == 3 || i == 5 || i == 7 || i == 9 {
-                filesystem_id_str.push('-');
-            }
-        }
-
-        let mut journal_id_str = String::new();
-        for (i, b) in header_ext.journal_id.iter().enumerate() {
-            journal_id_str.push_str(&format!("{:02X}", b));
-            if i == 3 || i == 5 || i == 7 || i == 9 {
-                journal_id_str.push('-');
-            }
-        }
-
         let mut volume_name = String::new();
         for b in header_ext.volume_name.iter() {
             if *b == 0 { break; }
@@ -154,7 +139,10 @@ impl Ext2Filesystem {
         }
 
         Ok(Self {
-            filesystem_id_str, journal_id_str, volume_name, last_mounted_path,
+            filesystem_id: UUID(header_ext.filesystem_id),
+            journal_id: UUID(header_ext.journal_id),
+            volume_name,
+            last_mounted_path,
             total_inodes: header.total_inodes,
             total_blocks: header.total_blocks,
             total_groups: num_groups,
@@ -231,9 +219,9 @@ impl Ext2Filesystem {
         }
     }
 
-    pub unsafe fn test(&self, drive: &AtaDrive) {
+    pub unsafe fn list_directory(&self, _path: Path, drive: &AtaDrive) -> Vec<DirectoryEntry> {
         let block = self.read_block(404, drive);
-        serial_println!("{:#?}", self.parse_directory_block(block.as_slice()));
+        self.parse_directory_block(block.as_slice())
     }
 
     fn block_group_containing_block(&self, block_num: u32) -> u32 {
@@ -252,9 +240,9 @@ impl Ext2Filesystem {
 
 #[derive(Debug, Clone)]
 pub struct DirectoryEntry {
-    file_name: String,
-    type_indicator: DirectoryEntryType,
-    inode: u32,
+    pub file_name: String,
+    pub type_indicator: DirectoryEntryType,
+    pub inode: u32,
 }
 
 #[derive(Debug, Clone)]

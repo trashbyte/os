@@ -15,6 +15,7 @@ pc-keyboard = "0.3.1"
 linked_list_allocator = "=0.6.4"
 acpi_crate = { package = "acpi", version = "0.6.0" }
 aml = "0.6.0"
+hashbrown = "=0.7.0"
 
 [dependencies.num]
 version = "0.2"
@@ -32,6 +33,12 @@ features = ["libm"]
 [dependencies.lazy_static]
 version = "1.0"
 features = ["spin_no_std"]
+
+[package.metadata.bootloader]
+physical-memory-offset = "0x100000000000"
+kernel-stack-address   = "0xFFFF00000000"
+# The size of the kernel stack, given in number of 4KiB pages.
+kernel-stack-size = 512
 
 [package.metadata.bootimage]
 run-command = [

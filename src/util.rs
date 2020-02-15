@@ -117,7 +117,26 @@ pub unsafe fn read_c_str_with_len(addr: VirtAddr, len: usize) -> String {
     string
 }
 
-#[allow(non_camel_case_types)]
-pub struct ISO_8859_1 {
-    
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[repr(transparent)]
+pub struct UUID(pub [u8; 16]);
+impl UUID {
+    pub fn parse(_s: String) -> Self {
+        unimplemented!();
+    }
+    pub fn to_string(&self) -> String {
+        let mut uuid_str = String::new();
+        for (i, b) in self.0.iter().enumerate() {
+            uuid_str.push_str(&format!("{:02X}", b));
+            if i == 3 || i == 5 || i == 7 || i == 9 {
+                uuid_str.push('-');
+            }
+        }
+        uuid_str
+    }
+}
+impl Display for UUID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.to_string())
+    }
 }
