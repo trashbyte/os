@@ -24,12 +24,13 @@ As this project is still in its infancy, very few things are currently implement
  - [X] PCI device discovery
  - [X] Keyboard input
  - [X] ATA/IDE storage driver
- - [X] Terminal colors, scrollback
+ - [X] Terminal colors, scrollback (buffered but you cant actually scroll lmao)
  - [X] PIT spin timer
  - [X] Basic shell
 
 #### In Progress
 
+ - [ ] *Functional* scrollback
  - [ ] Ext2 filesystem support
  - [ ] Generic block device interface
  - [ ] Basic round-robin task scheduling
@@ -39,6 +40,7 @@ As this project is still in its infancy, very few things are currently implement
  - [ ] Process fork/join
  - [ ] IPC
  - [ ] More advanced shell
+ - [ ] Better timers with APIC
  - [ ] Program loading
  - [ ] User space
  - [ ] Syscalls
@@ -83,7 +85,7 @@ Uhhh I don't have proper instructions for building although *in theory* it shoul
  - Install QEMU and add the executable dir to your path.
  - Run `cargo xrun` and pray.
 
-If you end up trying this and run into issues, I guess you could email me about it (`github@trashbyte.io`) or ping me on masto ([https://cybre.space/@trashbyte]) but I make no promises about being able to help you at this time. Also, you can check out [the tutorials here](https://os.phil-opp.com/) since I based my initial setup off of them. It might cover some steps I forgot.
+If you end up trying this and run into issues, I guess you could email me about it (`github@trashbyte.io`) or ping me on masto ([@trashbyte](https://cybre.space/@trashbyte)) but I make no promises about being able to help you at this time. Also, you can check out [the tutorials here](https://os.phil-opp.com/) since I based my initial setup off of them. It might cover some steps I forgot.
 
 ## How to Contribute
 
