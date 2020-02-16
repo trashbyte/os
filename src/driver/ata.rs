@@ -186,6 +186,21 @@ impl AtaDrive {
     }
 }
 
+//pub fn scan() {
+//    for bus in 0..2 {
+//        for device in 0..2 {
+//            unsafe {
+//                if let Some(info) = ide_identify(bus, device) {
+//                    let dev = PhysicalDevice {
+//                        id: PhysicalDeviceId(0),
+//                        dev_type: PhysicalDeviceType::FloppyDrive
+//                    };
+//                }
+//            }
+//        }
+//    }
+//}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code, non_snake_case)]
 #[repr(C)]

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::fmt::{Display, Formatter, Error};
 use alloc::string::String;
 use alloc::format;
+use crate::serial_println;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
@@ -156,7 +157,28 @@ pub fn name_for_vendor_id(vendor_id: u16) -> String {
     }
 }
 
-pub fn brute_force_scan(infos: &mut Vec<PciDeviceInfo>) {
+pub fn scan_devices() {
+    let mut infos = Vec::new();
+    brute_force_scan(&mut infos);
+    for i in infos {
+        match i.full_class {
+            PciFullClass::MassStorage_IDE => {
+                serial_println!("Found IDE device: bus {} device {}", i.bus, i.device);
+            },
+            PciFullClass::MassStorage_ATA => {
+                serial_println!("Found ATA device: bus {} device {}", i.bus, i.device);
+            },
+            PciFullClass::MassStorage_SATA => {
+                serial_println!("Found SATA device: bus {} device {}", i.bus, i.device);
+            },
+            _ => {
+                serial_println!("Found unsupported PCI device: bus {} device {} class {:?}", i.bus, i.device, i.full_class);
+            }
+        }
+    }
+}
+
+fn brute_force_scan(infos: &mut Vec<PciDeviceInfo>) {
     for bus in 0u8..=255 {
         for device in 0u8..32 {
             if let Some(info) = check_device(bus, device) {

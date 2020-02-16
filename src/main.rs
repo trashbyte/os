@@ -76,8 +76,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     os::gdt_idt_init();
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
-    /*let pci_infos =*/ os::pci_init();
-    os::acpi_init();
+    os::init_devices();
 //    let mut ahci_driver = unsafe {
 //        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
 //    };
@@ -93,9 +92,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 //        let addr = ahci_driver.ports[0].as_mut().unwrap().cmd_list_addr.as_u64() + phys_mem_offset.as_u64();
 //        debug_dump_memory(VirtAddr::new(addr), 0x20);
 //    }
-
-    os::service::DISK_SERVICE.lock().init();
-    os::service::FS_SERVICE.lock().init();
 
     print!("\n> ");
 

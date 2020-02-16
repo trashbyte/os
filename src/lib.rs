@@ -17,21 +17,22 @@
 extern crate alloc;
 #[macro_use] extern crate num_derive;
 
-pub mod serial;
-pub mod vga_buffer;
-pub mod interrupts;
-pub mod gdt;
-pub mod memory;
-pub mod allocator;
-pub mod fs;
 pub mod acpi;
-pub mod pci;
+pub mod allocator;
+pub mod device;
 pub mod driver;
-pub mod util;
 pub mod encoding;
+pub mod fs;
+pub mod gdt;
+pub mod interrupts;
+pub mod memory;
 pub mod path;
-pub mod shell;
+pub mod pci;
+pub mod serial;
 pub mod service;
+pub mod shell;
+pub mod util;
+pub mod vga_buffer;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
@@ -142,6 +143,16 @@ pub fn gdt_idt_init() {
 //        pic2_data.write(0xFF);
     }
 
+    // set PIT interval to ~200 Hz
+    unsafe {
+        // channel 0, low+high byte, mode 2, binary mode
+        Port::<u8>::new(0x43).write(0b00110100);
+        // set channel 0 interval to 5966 (0x174e)
+        let mut port = Port::<u8>::new(0x40);
+        port.write(0x4e);
+        port.write(0x17);
+    }
+
     //unsafe {
         // enable APIC
         //let mut port: Port<u8> = Port::new(0xF0);
@@ -167,10 +178,10 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
     MemoryInitResults { mapper, frame_allocator }
 }
 
-pub fn pci_init() -> Vec<PciDeviceInfo> {
-    let mut pci_infos = Vec::new();
-    pci::brute_force_scan(&mut pci_infos);
-    pci_infos
+pub fn init_devices() {
+    crate::acpi_init();
+    crate::pci::scan_devices();
+    crate::service::DISK_SERVICE.lock().init();
 }
 
 pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {

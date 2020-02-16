@@ -14,6 +14,8 @@ For example:
 
 As this project is still in its infancy, very few things are currently implemented. Here's an overview of what's done and what's to be done next:
 
+#### Done
+
  - [X] `cargo` cross-compilation toolchain (including full `cargo test` support and fast iteration with QEMU)
  - [X] Text-mode VGA output
  - [X] Serial output
@@ -22,40 +24,73 @@ As this project is still in its infancy, very few things are currently implement
  - [X] PCI device discovery
  - [X] Keyboard input
  - [X] ATA/IDE storage driver
- - [ ] Ext2 filesystem support (in progress)
- - [ ] Terminal colors, scrollback
- - [ ] Timers
- - [ ] Shell
+ - [X] Terminal colors, scrollback
+ - [X] PIT spin timer
+ - [X] Basic shell
+
+#### In Progress
+
+ - [ ] Ext2 filesystem support
+ - [ ] Generic block device interface
  - [ ] Basic round-robin task scheduling
- - [ ] Preemtive scheduler with variable priority
+
+#### Todo
+
  - [ ] Process fork/join
  - [ ] IPC
- - [ ] Module loader
- - [ ] Generic block device interface
- - [ ] Hardware multithreading (Symmetric Multiprocessing)
- - [ ] Internal debugger
- - [ ] User space
- - [ ] USB
+ - [ ] More advanced shell
  - [ ] Program loading
+ - [ ] User space
  - [ ] Syscalls
- - [ ] Permissions framework
- - [ ] Custom filesystem
+ - [ ] Preemtive scheduler with variable priority
  - [ ] Thread API, thread-local storage
+ - [ ] USB
+ - [ ] Permissions framework
  - [ ] VESA graphics drivers
  - [ ] Windowing system / desktop environment
- - [ ] GUI compositing
  - [ ] Mouse support
+ - [ ] Module loader
+ - [ ] Hardware multithreading (Symmetric Multiprocessing)
+ - [ ] Internal debugger
+ - [ ] Custom filesystem
+ - [ ] GUI compositing and such
  - [ ] Networking
  - [ ] Sound
  - [ ] Rust `async`/`await` support
  - [ ] Native Rust stdlib, custom OS cross-compiler
 
-Things which I plan to support at some point, but aren't needed to move forward:
- - [ ] UEFI?
+#### Things which I plan to support at some point, but aren't needed to move forward:
+
+ - [ ] UEFI? The bootloader is legacy-BIOS only right now, but I'm not sure I *need* UEFI. I might look into it at some point though.
  - [ ] AHCI/SATA driver (actually largely written already but I can't seem to get it to work)
- - [ ] Floppy disk driver
+ - [ ] Floppy disk driver, other old hardware stuffs
  - [ ] Support for more filesystems: FAT32, Ext3/4, NTFS
  - [ ] initramfs
  - [ ] various user-space programs
 
-Currently I only have plans to support x86_64, but I may consider adding support for ARM at some point in the future.
+## Supported Platforms
+
+Right now, the kernel targets x86_64, and runs in QEMU. I'd like to get a setup for hardware testing with reasonable iteration time, like maybe network boot or something.
+
+Right now I only have plans to support x86_64, but I may consider adding support for ARM at some point in the future.
+
+## How to Build
+
+Uhhh I don't have proper instructions for building although *in theory* it should be fairly simple (thank you cargo). If you want to be a guinea pig, then here's what I'd suggest:
+
+ - Make sure your toolchain is up to date. Set the rustup override (or the default) to nightly. There's about a dozen reasons this won't build on stable.
+ - Install xbuild and friends (`cargo install xbuild`).
+ - Install QEMU and add the executable dir to your path.
+ - Run `cargo xrun` and pray.
+
+If you end up trying this and run into issues, I guess you could email me about it (`github@trashbyte.io`) or ping me on masto ([https://cybre.space/@trashbyte]) but I make no promises about being able to help you at this time. Also, you can check out [the tutorials here](https://os.phil-opp.com/) since I based my initial setup off of them. It might cover some steps I forgot.
+
+## How to Contribute
+
+Don't.
+
+Okay, I know that's not very Open Source of me, but the project is currently very early in development, and if you asked me what I needed help with I'd have a hard time even telling you what to work on.
+
+I definitely want to accept contributions at some point, since that's a big part of what makes open source development great. But at least for the time being, just let me hammer this into something vaguely OS-shaped. Check back in a week or two.
+
+And if you're *really* curious, of course you can always look at the source, although it's a mess and poorly documented (again, I'm working on it).

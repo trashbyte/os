@@ -204,8 +204,16 @@ extern "x86-interrupt" fn disk_irq_handler(_frame: &mut InterruptStackFrame) {
     unsafe { Port::<u8>::new(0x20).write(0x20); }
 }
 
+static mut TICKS: u64 = 0;
+pub fn ticks() -> u64 { unsafe { TICKS } }
+
 extern "x86-interrupt" fn timer_interrupt_handler(_frame: &mut InterruptStackFrame) {
-    //print!(".");
+    unsafe {
+        TICKS += 5;
+    }
+//    if (*lock) % 1000 == 0 {
+//        print!(".");
+//    }
     unsafe { Port::<u8>::new(0x20).write(0x20); }
 }
 

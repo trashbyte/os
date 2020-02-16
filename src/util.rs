@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #![allow(dead_code)]
 
 use alloc::string::String;
@@ -134,9 +138,23 @@ impl UUID {
         }
         uuid_str
     }
+    pub fn version(&self) -> u32 {
+        ((self.0[6] >> 4) & 0xF) as u32
+    }
+    pub fn variant(&self) -> u8 {
+        ((self.0[8] >> 5) & 0b111) as u8
+    }
 }
 impl Display for UUID {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self.to_string())
+    }
+}
+
+pub fn sleep(ms: u32) {
+    let target_ticks = crate::interrupts::ticks() + ms as u64;
+    loop {
+        for _ in 0..1000 {}
+        if crate::interrupts::ticks() > target_ticks { return; }
     }
 }
