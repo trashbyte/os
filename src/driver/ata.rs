@@ -10,6 +10,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::vec;
 use num_traits::Float;
+use crate::driver::{StorageDriver, WriteError, MountError, ReadError};
+use crate::path::Path;
 
 #[derive(Debug)]
 pub struct AtaDrives {
@@ -74,6 +76,7 @@ impl AtaDrive {
         }
     }
 
+    // TODO: errors and such
     pub unsafe fn read_sector_to_slice(&self, buf: &mut [u8], lba: u32) {
         assert_eq!(buf.len(), 512);
         self.select();
@@ -110,12 +113,14 @@ impl AtaDrive {
         ide_400ns_delay();
     }
 
+    // TODO: errors and such
     pub unsafe fn read_sector_to_vec(&self, sector: u32) -> Vec<u8> {
         let mut output = vec![0u8; 512];
         self.read_sector_to_slice(&mut output, sector);
         output
     }
 
+    // TODO: errors and such
     unsafe fn ata_write_sector(&self, data: [u8; 512], lba: u32) {
         // We only support 28bit LBA so far
         let cmd = match self.drive_num {
@@ -183,6 +188,27 @@ impl AtaDrive {
 
     pub fn sector_containing_addr(addr: u64) -> u32 {
         (addr as f64 / 512.0).floor() as u32
+    }
+}
+
+impl StorageDriver for AtaDrive {
+    fn mount(&mut self, path: Path) -> Result<(), MountError> {
+        unimplemented!()
+    }
+
+    fn unmount(&mut self) -> Result<(), MountError> {
+        unimplemented!()
+    }
+
+    fn read_sector(&self, sector_num: u32) -> Result<[u8; 512], ReadError> {
+        let mut data = [0u8; 512];
+        unsafe { self.read_sector_to_slice(&mut data, sector_num); }
+        Ok(data)
+    }
+
+    fn write_sector(&mut self, sector_num: u32, sector_data: &[u8; 512]) -> Result<(), WriteError> {
+        unsafe { self.ata_write_sector(sector_data.clone(), sector_num); }
+        Ok(())
     }
 }
 

@@ -93,7 +93,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 //        debug_dump_memory(VirtAddr::new(addr), 0x20);
 //    }
 
-    print!("\n> ");
+    (*os::shell::SHELL.lock()).prompt();
 
     #[cfg(test)]
     test_main();

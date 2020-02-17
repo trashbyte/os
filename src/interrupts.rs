@@ -242,7 +242,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: &mut InterruptStack
                         (*crate::shell::SHELL.lock()).add_char(character);
                     }
                 },
-                DecodedKey::RawKey(key) => print!("{:?}", key),
+                DecodedKey::RawKey(key) => {}//print!("{:?}", key),
             }
         }
     }

@@ -219,7 +219,8 @@ impl Ext2Filesystem {
         }
     }
 
-    pub unsafe fn list_directory(&self, _path: Path, drive: &AtaDrive) -> Vec<DirectoryEntry> {
+    pub unsafe fn list_directory(&self, path: Path, drive: &AtaDrive) -> Vec<DirectoryEntry> {
+        // TODO: walk path
         let block = self.read_block(404, drive);
         self.parse_directory_block(block.as_slice())
     }
@@ -353,7 +354,7 @@ pub struct DirectoryEntryData {
     file_name: u8 // variable-size c-str
 }
 
-#[derive(Debug, Clone, FromPrimitive)]
+#[derive(Debug, Clone, FromPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DirectoryEntryType {
     Unknown = 0,
