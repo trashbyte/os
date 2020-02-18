@@ -117,6 +117,7 @@ impl Shell {
         self.prompt();
     }
 
+    /// Returns true if a character was deleted
     pub fn backspace(&mut self) -> bool {
         self.command_str.pop().is_some()
     }

@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, MemoryInitResults};
+use os::{println, serial_println, MemoryInitResults};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
@@ -22,6 +22,7 @@ use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    serial_println!("{}", info);
     println!("{}", info);
     os::util::halt_loop()
 }
@@ -94,7 +95,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 //        debug_dump_memory(VirtAddr::new(addr), 0x20);
 //    }
 
-    (*os::shell::SHELL.lock()).prompt();
+    (*os::shell::SHELL.lock()).submit();
 
     #[cfg(test)]
     test_main();

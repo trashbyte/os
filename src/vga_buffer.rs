@@ -98,11 +98,14 @@ struct Buffer {
     chars: [[Volatile<ScreenChar>; SCREEN_WIDTH]; SCREEN_HEIGHT]
 }
 
-
 pub struct Terminal {
+    /// Cursor column
     cursor_col: usize,
+    /// Absolute cursor index in scrollback
     cursor_row: usize,
+    /// Absolute index of scrollback item for the first line of the screen
     scroll_row: usize,
+    /// Current color code for new chars
     color_code: ColorCode,
     // TODO: use ring buffer, handle overflow properly
     scrollback: [[ScreenChar; SCREEN_WIDTH]; 1000],
@@ -131,6 +134,7 @@ impl Terminal {
                 }
             }
         }
+        self.scroll_to_bottom();
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -147,9 +151,9 @@ impl Terminal {
 
     fn refresh(&mut self) {
         let first_row_to_draw = self.scroll_row;
-        let last_row_to_draw = (self.scroll_row + SCREEN_HEIGHT).min(self.cursor_row);
+        let last_row_to_draw = (self.scroll_row + SCREEN_HEIGHT - 1).min(self.cursor_row);
         let mut write_row = 0;
-        for y in first_row_to_draw..(last_row_to_draw + 1) {
+        for y in first_row_to_draw..=last_row_to_draw {
             for x in 0..SCREEN_WIDTH {
                 let character = self.scrollback[y][x];
                 self.screen_buffer.chars[write_row][x].write(character);
@@ -201,18 +205,26 @@ impl Terminal {
         // else, we're trying to wrap around at the first line, do nothing
     }
 
-//    fn scroll(&mut self, add: bool) {
-//        if add {
-//            if self.lines_written == 0 { return; } // can't scroll anywhere on first line
-//            else { self.scroll_row += 1; }
-//        }
-//        else {
-//            if self.scroll_row == 0 { return; } // cant scroll past the first line
-//        }
-//
-//        if add { self.scroll_row += 1; }
-//        else { self.scroll_row -= 1; }
-//    }
+    pub fn scroll(&mut self, up: bool) {
+        if up {
+            if self.scroll_row > 0 {
+                self.scroll_row -= 1;
+            }
+        }
+        else {
+            if self.cursor_row >= SCREEN_HEIGHT && self.scroll_row < self.cursor_row - SCREEN_HEIGHT + 1 {
+                self.scroll_row += 1;
+            }
+        }
+        self.refresh();
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        if self.cursor_row - self.scroll_row >= SCREEN_HEIGHT {
+            self.scroll_row = self.cursor_row - SCREEN_HEIGHT + 1;
+            self.refresh();
+        }
+    }
 
     fn new_line(&mut self) {
         self.cursor_row += 1;

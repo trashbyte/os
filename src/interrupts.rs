@@ -231,7 +231,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: &mut InterruptStack
 
     let scancode: u8 = unsafe { port.read() };
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event) {
+        if let Some(key) = keyboard.process_keyevent(key_event.clone()) {
+            drop(keyboard);
             match key {
                 DecodedKey::Unicode(character) => {
                     if character == '\x08' {
@@ -250,7 +251,15 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: &mut InterruptStack
                         }
                     }
                 },
-                DecodedKey::RawKey(_key) => {}
+                DecodedKey::RawKey(key) => {
+                    if key_event.state == KeyState::Down {
+                        match key {
+                            KeyCode::PageUp => (*crate::vga_buffer::TERMINAL.lock()).scroll(true),
+                            KeyCode::PageDown => (*crate::vga_buffer::TERMINAL.lock()).scroll(false),
+                            _ => {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -269,6 +278,7 @@ extern "x86-interrupt" fn generic_interrupt_handler(_frame: &mut InterruptStackF
 #[cfg(test)]
 use crate::{serial_print, serial_println};
 use x86_64::instructions::port::Port;
+use pc_keyboard::{KeyCode, KeyState};
 
 #[test_case]
 fn test_breakpoint_exception() {
