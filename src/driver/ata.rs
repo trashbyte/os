@@ -12,6 +12,7 @@ use alloc::vec;
 use num_traits::Float;
 use crate::driver::{StorageDriver, WriteError, MountError, ReadError};
 use crate::path::Path;
+use core::ops::Range;
 
 #[derive(Debug)]
 pub struct AtaDrives {
@@ -192,7 +193,7 @@ impl AtaDrive {
 }
 
 impl StorageDriver for AtaDrive {
-    fn mount(&mut self, path: Path) -> Result<(), MountError> {
+    fn mount(&mut self, _path: Path) -> Result<(), MountError> {
         unimplemented!()
     }
 
@@ -209,6 +210,20 @@ impl StorageDriver for AtaDrive {
     fn write_sector(&mut self, sector_num: u32, sector_data: &[u8; 512]) -> Result<(), WriteError> {
         unsafe { self.ata_write_sector(sector_data.clone(), sector_num); }
         Ok(())
+    }
+
+    fn read_bytes(&self, addr_range: Range<u64>, buffer: &mut [u8]) {
+        let len = (addr_range.end - addr_range.start) as usize;
+        assert_eq!(buffer.len(), len);
+        let low_sector = addr_range.start / SECTOR_SIZE as u64;
+        let high_sector = addr_range.end / SECTOR_SIZE as u64 + 1;
+        let bytes: Vec<u8> = self.read_sector_range((low_sector as u32)..(high_sector as u32)).unwrap().iter().map(|slice| slice.iter()).flatten().cloned().collect();
+        let low_start_offset = (addr_range.start % SECTOR_SIZE as u64) as usize;
+        buffer.copy_from_slice(&bytes[low_start_offset..low_start_offset+len]);
+    }
+
+    fn write_bytes(&self, _addr_range: Range<u64>, _data: &[u8]) {
+        unimplemented!()
     }
 }
 

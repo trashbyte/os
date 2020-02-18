@@ -11,10 +11,13 @@ use alloc::vec::Vec;
 pub mod ahci;
 pub mod ata;
 
+#[derive(Debug, Clone, Copy)]
 pub enum MountError {
     AlreadyMounted
 }
+#[derive(Debug, Clone, Copy)]
 pub enum ReadError {}
+#[derive(Debug, Clone, Copy)]
 pub enum WriteError {
     InvalidParams
 }
@@ -46,4 +49,6 @@ pub trait StorageDriver {
         }
         Ok(())
     }
+    fn read_bytes(&self, addr_range: Range<u64>, buffer: &mut [u8]);
+    fn write_bytes(&self, addr_range: Range<u64>, data: &[u8]);
 }

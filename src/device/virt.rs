@@ -2,6 +2,8 @@
 // Copyright (c) 2020 trashbyte
 // See LICENSE.txt for full license
 
+#![allow(dead_code)]
+
 
 pub enum VirtualDeviceType {
     Character,

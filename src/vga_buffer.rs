@@ -41,6 +41,13 @@ pub fn _print(args: fmt::Arguments) {
     });
 }
 
+#[doc(hidden)]
+pub fn _backspace() {
+    interrupts::without_interrupts(|| {
+        TERMINAL.lock().backspace();
+    });
+}
+
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +182,23 @@ impl Terminal {
             port1.write(0x0E);
             port2.write(((pos >> 8) & 0xFF) as u8);
         }
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor_col > 0 {
+            self.cursor_col -= 1;
+
+            self.scrollback[self.cursor_row][self.cursor_col] = BLANK_CHAR;
+            self.screen_buffer.chars[self.cursor_row.min(SCREEN_HEIGHT-1)][self.cursor_col].write(BLANK_CHAR);
+        }
+        else if self.cursor_row > 0 { // wrap
+            self.cursor_col = SCREEN_WIDTH-1;
+            self.cursor_row -= 1;
+
+            self.scrollback[self.cursor_row][self.cursor_col] = BLANK_CHAR;
+            self.screen_buffer.chars[self.cursor_row.min(SCREEN_HEIGHT-1)][self.cursor_col].write(BLANK_CHAR);
+        }
+        // else, we're trying to wrap around at the first line, do nothing
     }
 
 //    fn scroll(&mut self, add: bool) {

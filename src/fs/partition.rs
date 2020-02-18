@@ -1,8 +1,9 @@
 use alloc::vec::Vec;
 use crate::driver::StorageDriver;
-use alloc::boxed::Box;
 use crate::util::UUID;
 use alloc::string::String;
+use alloc::rc::Rc;
+use core::ops::Range;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PartitionType {
@@ -25,9 +26,19 @@ pub enum PartitionTable {
     MBR(MbrPartitionTable),
     GPT(GptPartitionTable),
 }
+
 pub enum Partition {
     MBR(MbrPartition),
     GPT(GptPartition),
+}
+impl Partition {
+    pub fn read_bytes(&self, addr_range: Range<u64>, buffer: &mut [u8]) {
+        // TODO: there has to be a better way to do this
+        match &self {
+            Partition::GPT(part) => part.media.read_bytes(addr_range, buffer),
+            Partition::MBR(part) => part.media.read_bytes(addr_range, buffer)
+        }
+    }
 }
 
 pub struct MbrPartitionTable {
@@ -43,14 +54,14 @@ pub struct GptPartitionTable {
 }
 
 pub struct MbrPartition {
-    pub media: Box<dyn StorageDriver>,
+    pub media: Rc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,
 }
 
 pub struct GptPartition {
-    pub media: Box<dyn StorageDriver>,
+    pub media: Rc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,

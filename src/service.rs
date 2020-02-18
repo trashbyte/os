@@ -6,15 +6,15 @@ use spin::Mutex;
 use crate::driver::ata::{AtaDrive, ide_identify};
 use hashbrown::HashMap;
 use crate::fs::ext2::Ext2Filesystem;
-use lazy_static::lazy_static;
+use alloc::rc::Rc;
 
-lazy_static! {
-    pub static ref DISK_SERVICE: Mutex<DiskService> = Mutex::new(DiskService::new());
-    //pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
-}
+
+pub static mut DISK_SERVICE: Option<Mutex<DiskService>> = None;
+//pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
+
 
 pub struct DiskService {
-    drives: HashMap<u32, AtaDrive>,
+    drives: HashMap<u32, Rc<AtaDrive>>,
     next_id: u32,
 }
 impl DiskService {
@@ -29,20 +29,20 @@ impl DiskService {
             for device in 0..2 {
                 unsafe {
                     if let Some(info) = ide_identify(bus, device) {
-                        self.drives.insert(self.next_id, AtaDrive::from_identify(info, bus, device));
+                        self.drives.insert(self.next_id, Rc::new(AtaDrive::from_identify(info, bus, device)));
                         self.next_id += 1;
                     }
                 }
             }
         }
     }
-    pub fn get(&self, id: u32) -> Option<&AtaDrive> {
+    pub fn get(&self, id: u32) -> Option<Rc<AtaDrive>> {
         match self.drives.get(&id) {
             None => None,
-            Some(dt) => Some(&dt)
+            Some(dt) => Some(dt.clone())
         }
     }
-    pub fn iter(&self) -> hashbrown::hash_map::Iter<u32, AtaDrive> {
+    pub fn iter(&self) -> hashbrown::hash_map::Iter<u32, Rc<AtaDrive>> {
         self.drives.iter()
     }
 }

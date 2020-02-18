@@ -234,15 +234,23 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: &mut InterruptStack
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
                 DecodedKey::Unicode(character) => {
-                    print!("{}", character);
-                    if character == '\n' {
-                        (*crate::shell::SHELL.lock()).submit();
+                    if character == '\x08' {
+                        // true if a character was erased (so we can't go past the start of the string)
+                        if (*crate::shell::SHELL.lock()).backspace() {
+                            crate::vga_buffer::_backspace();
+                        }
                     }
                     else {
-                        (*crate::shell::SHELL.lock()).add_char(character);
+                        print!("{}", character);
+                        if character == '\n' {
+                            (*crate::shell::SHELL.lock()).submit();
+                        }
+                        else {
+                            (*crate::shell::SHELL.lock()).add_char(character);
+                        }
                     }
                 },
-                DecodedKey::RawKey(key) => {}//print!("{:?}", key),
+                DecodedKey::RawKey(_key) => {}
             }
         }
     }

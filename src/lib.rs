@@ -51,6 +51,12 @@ use x86_64::instructions::port::Port;
 use core::ops::Range;
 use crate::driver::ahci::AhciDriver;
 use crate::util::halt_loop;
+use crate::fs::vfs::VFS;
+use crate::device::block::{BlockDevice, BlockDeviceMedia};
+use crate::fs::partition::{MbrPartition, PartitionType, Partition};
+use alloc::rc::Rc;
+use crate::service::DiskService;
+use crate::fs::ext2::Ext2Filesystem;
 
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 pub const KERNEL_STACK_ADDR: u64 = 0xFFFF00000000;
@@ -181,7 +187,21 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
 pub fn init_devices() {
     crate::acpi_init();
     crate::pci::scan_devices();
-    crate::service::DISK_SERVICE.lock().init();
+    unsafe {
+        crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
+        (*crate::service::DISK_SERVICE.as_mut().unwrap().lock()).init();
+    }
+    let mut disk_srv = unsafe { crate::service::DISK_SERVICE.as_ref().unwrap().lock() };
+    (*disk_srv).init();
+    let part = MbrPartition {
+        media: (*disk_srv).get(2).unwrap(),
+        first_sector: 0,
+        last_sector: 0,
+        partition_type: PartitionType::Filesystem
+    };
+    let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
+    let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
+    unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
 }
 
 pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {

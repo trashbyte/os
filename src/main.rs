@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, print, MemoryInitResults};
+use os::{println, MemoryInitResults};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
@@ -77,6 +77,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
     os::init_devices();
+
 //    let mut ahci_driver = unsafe {
 //        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
 //    };
