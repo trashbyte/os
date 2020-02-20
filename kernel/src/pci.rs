@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use x86_64::instructions::port::Port;
 use alloc::vec::Vec;
 use core::fmt::{Display, Formatter, Error};

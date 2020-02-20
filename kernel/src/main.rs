@@ -12,18 +12,19 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{println, serial_println, MemoryInitResults};
+use os::{MemoryInitResults, println};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
 use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
+use chrono::{Utc, TimeZone, LocalResult};
 
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    serial_println!("{}", info);
-    println!("{}", info);
+    os::serial_println!("{}", info);
+    os::println!("{}", info);
     os::util::halt_loop()
 }
 
@@ -32,7 +33,6 @@ fn panic(info: &PanicInfo) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     os::test_panic_handler(info)
 }
-
 
 
 entry_point!(kernel_main);
@@ -78,6 +78,22 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
     os::init_devices();
+    os::apic_init();
+    os::rtc::init_rtc();
+
+    let current_time_secs = os::rtc::Rtc::new().time();
+    let current_time = match Utc.timestamp_opt(current_time_secs as i64, 0) {
+        LocalResult::None => {
+            println!("ERROR: Failed to get current time - Invalid timestamp: {}", current_time_secs);
+            Utc.timestamp(1577836800, 0) // fallback to 01/01/2020
+        }
+        LocalResult::Single(t) => t,
+        LocalResult::Ambiguous(a, b) => {
+            println!("WARNING: Current time is ambiguous: {} or {}", a, b);
+            a
+        }
+    };
+    println!("Current time is: {}", current_time);
 
 //    let mut ahci_driver = unsafe {
 //        os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())

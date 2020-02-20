@@ -18,6 +18,7 @@ extern crate alloc;
 #[macro_use] extern crate num_derive;
 
 pub mod acpi;
+pub mod apic;
 pub mod allocator;
 pub mod device;
 pub mod driver;
@@ -33,6 +34,8 @@ pub mod service;
 pub mod shell;
 pub mod util;
 pub mod vga_buffer;
+pub mod rtc;
+pub mod time;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
@@ -43,10 +46,6 @@ use memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
 use pci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
-use acpi::OsAcpiHandler;
-use acpi_crate::parse_rsdp;
-use acpi_crate::interrupt::InterruptModel;
-use aml::AmlContext;
 use x86_64::instructions::port::Port;
 use core::ops::Range;
 use crate::driver::ahci::AhciDriver;
@@ -57,6 +56,8 @@ use crate::fs::partition::{MbrPartition, PartitionType, Partition};
 use alloc::rc::Rc;
 use crate::service::DiskService;
 use crate::fs::ext2::Ext2Filesystem;
+#[cfg(test)]
+use bootloader::BootInfo;
 
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 pub const KERNEL_STACK_ADDR: u64 = 0xFFFF00000000;
@@ -144,29 +145,32 @@ pub fn gdt_idt_init() {
         wait();
 
         // after init command, mask all interrupts
-//        pic1_data.write(0xFF);
-//        wait();
-//        pic2_data.write(0xFF);
+        pic1_data.write(0xFF);
+        wait();
+        pic2_data.write(0xFF);
     }
 
     // set PIT interval to ~200 Hz
-    unsafe {
-        // channel 0, low+high byte, mode 2, binary mode
-        Port::<u8>::new(0x43).write(0b00110100);
-        // set channel 0 interval to 5966 (0x174e)
-        let mut port = Port::<u8>::new(0x40);
-        port.write(0x4e);
-        port.write(0x17);
-    }
-
-    //unsafe {
-        // enable APIC
-        //let mut port: Port<u8> = Port::new(0xF0);
-        //let old = port.read();
-        //port.write(old | 0x100);
-    //}
+//    unsafe {
+//        // channel 0, low+high byte, mode 2, binary mode
+//        Port::<u8>::new(0x43).write(0b00110100);
+//        // set channel 0 interval to 5966 (0x174e)
+//        let mut port = Port::<u8>::new(0x40);
+//        port.write(0x4e);
+//        port.write(0x17);
+//    }
 
     x86_64::instructions::interrupts::enable();
+}
+
+pub fn apic_init() {
+    // enable APIC
+    unsafe {
+        let apic_base = crate::apic::LOCAL_APIC.lock().base_addr;
+        let addr = apic_base + x86::apic::xapic::XAPIC_SVR as u64 + PHYS_MEM_OFFSET;
+        let old = *(addr as *const u32);
+        *(addr as *mut u32) = old | 0x100;
+    }
 }
 
 #[allow(dead_code)]
@@ -185,7 +189,6 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
 }
 
 pub fn init_devices() {
-    crate::acpi_init();
     crate::pci::scan_devices();
     unsafe {
         crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
@@ -202,6 +205,7 @@ pub fn init_devices() {
     let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
     let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
     unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
+    crate::acpi::init();
 }
 
 pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {
@@ -216,39 +220,6 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u6
     //driver.set_ahci_enable(true);
     driver.set_interrupt_enable(true);
     driver
-}
-
-pub fn acpi_init() {
-    const RDSP_HEADER: u64 = 0x2052545020445352;
-    let mut rdsp_addr = None;
-    for i in 0..0x2000-1 {
-        unsafe {
-            let addr = 0x000E0000 + (i * 16) + PHYS_MEM_OFFSET;
-            let section = *(addr as *mut u64) as u64;
-            if section == RDSP_HEADER {
-                rdsp_addr = Some(addr);
-            }
-        }
-    }
-    if rdsp_addr.is_none() {
-        panic!("Couldn't find RDSP");
-    }
-    let rdsp_phys_addr = rdsp_addr.unwrap() - PHYS_MEM_OFFSET;
-
-    let mut acpi_handler = OsAcpiHandler::new(PHYS_MEM_OFFSET);
-    let acpi = parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
-    let apic_slot = acpi.interrupt_model.as_ref().unwrap();
-    let _apic;
-    if let InterruptModel::Apic(a) = apic_slot {
-        _apic = a;
-    }
-    else {
-        panic!("No APIC found. Current kernel requires APIC.");
-    }
-    let mut aml_context = AmlContext::new();
-    for ssdt in acpi.ssdts.iter() {
-        aml_context.parse_table(unsafe { alloc::slice::from_raw_parts((ssdt.address as u64 + PHYS_MEM_OFFSET) as *const u8, ssdt.length as usize) }).unwrap();
-    }
 }
 
 // QEMU ////////////////////////////////////////////////////////////////////////

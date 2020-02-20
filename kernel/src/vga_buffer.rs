@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use core::fmt;
 use volatile::Volatile;
 use lazy_static::lazy_static;
@@ -277,10 +281,10 @@ fn test_println_output() {
 
     let s = "Some test string that fits on a single line";
     interrupts::without_interrupts(|| {
-        let mut writer = WRITER.lock();
+        let mut writer = TERMINAL.lock();
         writeln!(writer, "\n{}", s).expect("writeln failed");
         for (i, c) in s.chars().enumerate() {
-            let screen_char = writer.buffer.chars[SCREEN_HEIGHT - 2][i].read();
+            let screen_char = writer.screen_buffer.chars[SCREEN_HEIGHT - 2][i].read();
             assert_eq!(char::from(screen_char.ascii_character), c);
         }
     });
@@ -296,7 +300,7 @@ fn test_newline() {
     print!("{}", s);
     for (i, c) in s.chars().enumerate() {
         if c == '\n' { continue }
-        let screen_char = WRITER.lock().buffer.chars[SCREEN_HEIGHT - 2][i].read();
+        let screen_char = TERMINAL.lock().screen_buffer.chars[SCREEN_HEIGHT - 2][i].read();
         assert_eq!(char::from(screen_char.ascii_character), c);
     }
 
@@ -312,7 +316,7 @@ fn test_wrapping() {
     for (i, c) in s.chars().enumerate() {
         let row = if i < 80 { SCREEN_HEIGHT - 2 } else { SCREEN_HEIGHT - 1 };
         let col = if i < 80 { i } else { i - 80 };
-        let screen_char = WRITER.lock().buffer.chars[row][col].read();
+        let screen_char = TERMINAL.lock().screen_buffer.chars[row][col].read();
         assert_eq!(char::from(screen_char.ascii_character), c);
     }
 

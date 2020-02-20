@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #[repr(C)]
 pub struct FAT32BootSector {
     boot_jmp: [u8; 3],

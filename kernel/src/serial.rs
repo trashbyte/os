@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 use uart_16550::SerialPort;
 use spin::Mutex;
 use lazy_static::lazy_static;

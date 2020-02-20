@@ -1,0 +1,71 @@
+[package]
+name = "os"
+version = "0.1.0"
+authors = ["trashbyte <github@trashbyte.io>"]
+edition = "2018"
+
+[dependencies]
+bootloader = { version = "0.8.5", features = ["map_physical_memory"]}
+volatile = "0.2.6"
+spin = "0.5.2"
+x86 = "0.29.0"
+x86_64 = "0.8.1"
+uart_16550 = "0.2.0"
+pic8259_simple = "0.1.1"
+pc-keyboard = "0.3.1"
+linked_list_allocator = "=0.6.4"
+acpi_crate = { package = "acpi", version = "0.6.0" }
+aml = "0.6.0"
+hashbrown = "=0.7.0"
+#crypto_hashes
+
+[dependencies.chrono]
+version = "0.4.10"
+default-features = false
+
+[dependencies.num]
+version = "0.2"
+default-features = false
+
+[dependencies.num-derive]
+version = "0.3"
+default-features = false
+
+[dependencies.num-traits]
+version = "0.2"
+default-features = false
+features = ["libm"]
+
+[dependencies.lazy_static]
+version = "1.0"
+features = ["spin_no_std"]
+
+[package.metadata.bootloader]
+physical-memory-offset = "0x100000000000"
+kernel-stack-address   = "0xFFFF00000000"
+# The size of the kernel stack, given in number of 4KiB pages.
+kernel-stack-size = 512
+
+[package.metadata.bootimage]
+run-command = [
+    "qemu-system-x86_64",
+    "-smp", "4",
+    "-m", "512M",
+    "-drive", "format=raw,file=..\\target\\x86_64-custom\\debug\\bootimage-os.bin",
+    "-drive", "format=raw,file=hdb.img",
+    #"-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
+    #"-device", "ahci,id=ahci",
+    #"-device", "ide-hd,bus=ahci.0,drive=vdisk",
+    #"-fda", "fda.img",
+    "-serial", "stdio"
+]
+test-args = [
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-display", "none"
+]
+test-success-exit-code = 33 # (0x10 << 1) | 1
+test-timeout = 30 # (in seconds)
+
+[[test]]
+name = "stack_overflow"
+harness = false

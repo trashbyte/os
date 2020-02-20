@@ -2,7 +2,6 @@
 // Copyright (c) 2020 trashbyte
 // See LICENSE.txt for full license
 
-
 use hashbrown::HashMap;
 use crate::path::Path;
 use alloc::vec::Vec;

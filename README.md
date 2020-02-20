@@ -24,13 +24,13 @@ As this project is still in its infancy, very few things are currently implement
  - [X] PCI device discovery
  - [X] Keyboard input
  - [X] ATA/IDE storage driver
- - [X] Terminal colors, scrollback (buffered but you cant actually scroll lmao)
+ - [X] Terminal colors, scrollback
  - [X] PIT spin timer
  - [X] Basic shell
+ - [X] RTC
 
 #### In Progress
 
- - [ ] *Functional* scrollback
  - [ ] Ext2 filesystem support
  - [ ] Generic block device interface
  - [ ] Basic round-robin task scheduling

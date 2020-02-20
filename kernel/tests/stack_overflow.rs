@@ -1,3 +1,7 @@
+// The MIT License (MIT)
+// Copyright (c) 2020 trashbyte
+// See LICENSE.txt for full license
+
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
