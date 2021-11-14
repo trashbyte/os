@@ -7,8 +7,7 @@
 #![feature(custom_test_frameworks)]
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
-#![feature(const_in_array_repeat_expressions)]
-#![feature(const_fn)]
+#![feature(llvm_asm)]
 
 #![cfg_attr(test, no_main)]
 #![test_runner(crate::test_runner)]
@@ -30,6 +29,8 @@ pub mod shell;
 pub mod util;
 pub mod vga_buffer;
 pub mod time;
+pub mod pic8259_simple;
+pub mod cpuio;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
