@@ -5,6 +5,12 @@ authors = ["trashbyte <github@trashbyte.io>"]
 edition = "2018"
 
 [dependencies]
+#kernel-utils = { path = "../kernel-utils" }
+tinypci = { version = "0.1.0", default-features = false }
+
+pest = { version = "2.1", default-features = false }
+pest_derive = { version = "2.1", default-features = false }
+
 bootloader = { version = "0.8.5", features = ["map_physical_memory"]}
 volatile = "0.2.6"
 spin = "0.5.2"
@@ -14,10 +20,12 @@ uart_16550 = "0.2.0"
 pic8259_simple = "0.1.1"
 pc-keyboard = "0.3.1"
 linked_list_allocator = "=0.6.4"
-acpi_crate = { package = "acpi", version = "0.6.0" }
-aml = "0.6.0"
+acpi_crate = { package = "acpi", version = "=0.6.0" }
+aml = "=0.6.0"
 hashbrown = "=0.7.0"
+raw-cpuid = "=7.0.3"
 #crypto_hashes
+#goblin = "0.2.0"
 
 [dependencies.chrono]
 version = "0.4.10"

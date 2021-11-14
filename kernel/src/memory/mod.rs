@@ -2,6 +2,8 @@
 // Copyright (c) 2020 trashbyte
 // See LICENSE.txt for full license
 
+pub mod allocator;
+
 use x86_64::{structures::paging::PageTable, VirtAddr, PhysAddr};
 use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, PhysFrame, UnusedPhysFrame};
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};

@@ -15,7 +15,7 @@ lazy_static! {
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         unsafe {
             idt.double_fault.set_handler_fn(double_fault_handler)
-               .set_stack_index(crate::gdt::DOUBLE_FAULT_IST_INDEX);
+               .set_stack_index(crate::arch::gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt.non_maskable_interrupt.set_handler_fn(non_maskable_interrupt_handler);

@@ -152,9 +152,9 @@ impl Display for UUID {
 }
 
 pub fn sleep(ms: u32) {
-    let target_ticks = crate::interrupts::ticks() + ms as u64;
+    let target_ticks = crate::arch::interrupts::ticks() + ms as u64;
     loop {
         for _ in 0..1000 {}
-        if crate::interrupts::ticks() > target_ticks { return; }
+        if crate::arch::interrupts::ticks() > target_ticks { return; }
     }
 }

@@ -1,0 +1,7 @@
+[package]
+name = "kernel-utils"
+version = "0.1.0"
+authors = ["trashbyte <github@trashbyte.io>"]
+edition = "2018"
+
+[dependencies]

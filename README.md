@@ -20,7 +20,7 @@ As this project is still in its infancy, very few things are currently implement
  - [X] Text-mode VGA output
  - [X] Serial output
  - [X] Interrupt handling
- - [X] Virtual memory and rust global allocator for collection types
+ - [X] Virtual memory and rust global memory.allocator for collection types
  - [X] PCI device discovery
  - [X] Keyboard input
  - [X] ATA/IDE storage driver

@@ -17,7 +17,7 @@ struct ListNode {
 /// The sizes must each be power of 2 because they are also used as the block alignment (alignments
 /// must be always powers of 2). We don't define any block sizes smaller than 8 because each block
 /// must be capable of storing a 64-bit pointer to the next block when freed. For allocations
-/// greater than 2048 bytes we fall back to a linked list allocator.
+/// greater than 2048 bytes we fall back to a linked list memory.allocator.
 const BLOCK_SIZES: &[usize] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 pub struct FixedSizeBlockAllocator {
@@ -34,7 +34,7 @@ impl FixedSizeBlockAllocator {
         }
     }
 
-    /// Initialize the allocator with the given heap bounds.
+    /// Initialize the memory.allocator with the given heap bounds.
     ///
     /// This function is unsafe because the caller must guarantee that the given
     /// heap bounds are valid and that the heap is unused. This method must be
@@ -43,7 +43,7 @@ impl FixedSizeBlockAllocator {
         self.fallback_allocator.init(heap_start, heap_size);
     }
 
-    /// Allocates using the fallback allocator.
+    /// Allocates using the fallback memory.allocator.
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
         match self.fallback_allocator.allocate_first_fit(layout) {
             Ok(ptr) => ptr.as_ptr(),

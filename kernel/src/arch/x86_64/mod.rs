@@ -2,7 +2,8 @@
 // Copyright (c) 2020 trashbyte
 // See LICENSE.txt for full license
 
-pub mod physical;
-pub mod virt;
-pub mod block;
-pub mod serial;
+pub mod apic;
+pub mod cpu;
+pub mod gdt;
+pub mod rtc;
+pub mod interrupts;

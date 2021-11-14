@@ -15,26 +15,20 @@
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
-#[macro_use] extern crate num_derive;
 
 pub mod acpi;
-pub mod apic;
-pub mod allocator;
+pub mod arch;
 pub mod device;
 pub mod driver;
 pub mod encoding;
 pub mod fs;
-pub mod gdt;
-pub mod interrupts;
 pub mod memory;
 pub mod path;
 pub mod pci;
-pub mod serial;
 pub mod service;
 pub mod shell;
 pub mod util;
 pub mod vga_buffer;
-pub mod rtc;
 pub mod time;
 
 use core::panic::PanicInfo;
@@ -44,7 +38,7 @@ use x86_64::{VirtAddr, PhysAddr};
 use bootloader::entry_point;
 use memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
-use pci::{PciDeviceInfo, PciClass};
+use tinypci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
 use x86_64::instructions::port::Port;
 use core::ops::Range;
@@ -110,8 +104,8 @@ pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
 ///
 /// NOTE: We do NOT have a valid heap yet, so nothing here can use `alloc` types.
 pub fn gdt_idt_init() {
-    gdt::init();
-    interrupts::init_idt();
+    arch::gdt::init();
+    arch::interrupts::init_idt();
     let mut wait_port: Port<u8> = Port::new(0x80);
     let mut wait = || unsafe { wait_port.write(0); };
     let mut pic1_command: Port<u8> = Port::new(0x20);
@@ -166,7 +160,7 @@ pub fn gdt_idt_init() {
 pub fn apic_init() {
     // enable APIC
     unsafe {
-        let apic_base = crate::apic::LOCAL_APIC.lock().base_addr;
+        let apic_base = crate::arch::apic::LOCAL_APIC.lock().base_addr;
         let addr = apic_base + x86::apic::xapic::XAPIC_SVR as u64 + PHYS_MEM_OFFSET;
         let old = *(addr as *const u32);
         *(addr as *mut u32) = old | 0x100;
@@ -182,14 +176,31 @@ pub struct MemoryInitResults {
 pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
+    memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
 
     MemoryInitResults { mapper, frame_allocator }
 }
 
 pub fn init_devices() {
-    crate::pci::scan_devices();
+    let pci_infos = tinypci::brute_force_scan();
+    for i in pci_infos {
+        match i.full_class {
+            tinypci::PciFullClass::MassStorage_IDE => {
+                serial_println!("Found IDE device: bus {} device {}", i.bus, i.device);
+            },
+            tinypci::PciFullClass::MassStorage_ATA => {
+                serial_println!("Found ATA device: bus {} device {}", i.bus, i.device);
+            },
+            tinypci::PciFullClass::MassStorage_SATA => {
+                serial_println!("Found SATA device: bus {} device {}", i.bus, i.device);
+            },
+            _ => {
+                serial_println!("Found unsupported PCI device: bus {} device {} class {:?}", i.bus, i.device, i.full_class);
+            }
+        }
+    }
+
     unsafe {
         crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
         (*crate::service::DISK_SERVICE.as_mut().unwrap().lock()).init();
