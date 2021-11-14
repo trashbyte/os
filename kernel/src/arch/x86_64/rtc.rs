@@ -1,7 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////L
 // The MIT License (MIT)
-// Based on code by the RedoxOS team (MIT License). Modified code is also MIT-licensed.
-// See LICENSE.txt for full license
-// Adapted from RedoxOS's kernel/src/arch/x86_64/device/rtc.rs
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
+///////////////////////////////////////////////////////////////////////////////L
+// Adapted from RedoxOS's kernel/src/arch/x86_64/device/rtc.rs (MIT License)
 
 use x86_64::instructions::port::Port;
 

@@ -1,6 +1,8 @@
+///////////////////////////////////////////////////////////////////////////////L
 // The MIT License (MIT)
-// Copyright (c) 2020 trashbyte
-// See LICENSE.txt for full license
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
+///////////////////////////////////////////////////////////////////////////////L
 
 use x86_64::{
     structures::paging::{mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB},

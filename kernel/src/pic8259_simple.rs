@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////L
+// The MIT License (MIT)
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
+///////////////////////////////////////////////////////////////////////////////L
+
 //! Support for the 8259 Programmable Interrupt Controller, which handles
 //! basic I/O interrupts.  In multicore mode, we would apparently need to
 //! replace this with an APIC interface.
