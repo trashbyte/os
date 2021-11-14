@@ -7,7 +7,7 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(os::test_runner)]
 
-use os::{println, serial_print, serial_println};
+use kernel::{println, serial_print, serial_println};
 use core::panic::PanicInfo;
 
 #[panic_handler]

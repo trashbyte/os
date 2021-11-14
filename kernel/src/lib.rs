@@ -7,7 +7,9 @@
 #![feature(custom_test_frameworks)]
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
-#![feature(llvm_asm)]
+#![feature(asm)]
+#![feature(const_mut_refs)]
+#![feature(const_fn_trait_bound)]
 
 #![cfg_attr(test, no_main)]
 #![test_runner(crate::test_runner)]
@@ -20,16 +22,16 @@ pub mod arch;
 pub mod device;
 pub mod driver;
 pub mod encoding;
-pub mod fs;
+//pub mod fs;
 pub mod memory;
 pub mod path;
 pub mod pci;
-pub mod service;
+//pub mod service;
 pub mod shell;
 pub mod util;
 pub mod vga_buffer;
 pub mod time;
-pub mod pic8259_simple;
+//pub mod pic8259_simple;
 pub mod cpuio;
 
 use core::panic::PanicInfo;
@@ -39,20 +41,20 @@ use x86_64::{VirtAddr, PhysAddr};
 use bootloader::entry_point;
 use memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
-use tinypci::{PciDeviceInfo, PciClass};
-use alloc::vec::Vec;
 use x86_64::instructions::port::Port;
-use core::ops::Range;
 use crate::driver::ahci::AhciDriver;
 use crate::util::halt_loop;
-use crate::fs::vfs::VFS;
-use crate::device::block::{BlockDevice, BlockDeviceMedia};
-use crate::fs::partition::{MbrPartition, PartitionType, Partition};
-use alloc::rc::Rc;
-use crate::service::DiskService;
-use crate::fs::ext2::Ext2Filesystem;
+//use crate::fs::vfs::VFS;
+//use crate::device::block::{BlockDevice, BlockDeviceMedia};
+//use crate::fs::partition::{MbrPartition, PartitionType, Partition};
+//use alloc::rc::Rc;
+//use crate::service::DiskService;
+//use crate::fs::ext2::Ext2Filesystem;
 #[cfg(test)]
 use bootloader::BootInfo;
+use tinypci::{PciDeviceInfo, PciClass};
+use alloc::vec::Vec;
+use core::ops::Range;
 
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 pub const KERNEL_STACK_ADDR: u64 = 0xFFFF00000000;
@@ -89,7 +91,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 
 // Testing entry point /////////////////////////////////////////////////////////
 
-/// Entry point for `cargo xtest`
+/// Entry point for `cargo test`
 #[cfg(test)]
 #[no_mangle]
 pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
@@ -202,21 +204,21 @@ pub fn init_devices() {
         }
     }
 
-    unsafe {
-        crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
-        (*crate::service::DISK_SERVICE.as_mut().unwrap().lock()).init();
-    }
-    let mut disk_srv = unsafe { crate::service::DISK_SERVICE.as_ref().unwrap().lock() };
-    (*disk_srv).init();
-    let part = MbrPartition {
-        media: (*disk_srv).get(2).unwrap(),
-        first_sector: 0,
-        last_sector: 0,
-        partition_type: PartitionType::Filesystem
-    };
-    let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
-    let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
-    unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
+    // unsafe {
+    //     crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
+    //     (*crate::service::DISK_SERVICE.as_mut().unwrap().lock()).init();
+    // }
+    // let mut disk_srv = unsafe { crate::service::DISK_SERVICE.as_ref().unwrap().lock() };
+    // (*disk_srv).init();
+    // let part = MbrPartition {
+    //     media: (*disk_srv).get(2).unwrap(),
+    //     first_sector: 0,
+    //     last_sector: 0,
+    //     partition_type: PartitionType::Filesystem
+    // };
+    // let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
+    // let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
+    // unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
     crate::acpi::init();
 }
 
@@ -229,7 +231,7 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u6
     let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
     let mut driver = AhciDriver::new(ahci_hba_addr, ahci_mem_range);
     driver.reset();
-    //driver.set_ahci_enable(true);
+    driver.set_ahci_enable(true);
     driver.set_interrupt_enable(true);
     driver
 }

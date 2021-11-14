@@ -19,12 +19,12 @@
 #![allow(non_upper_case_globals)]
 
 pub mod fis;
-pub mod atapi;
+//pub mod atapi;
 pub mod constants;
 pub mod port;
 
 use crate::driver::ahci::fis::{FisRegisterHostToDevice, Fis};
-use crate::{PHYS_MEM_OFFSET};
+use crate::PHYS_MEM_OFFSET;
 
 use volatile::Volatile;
 use core::ops::Range;
@@ -32,8 +32,9 @@ use x86_64::{VirtAddr, PhysAddr};
 use alloc::vec::Vec;
 use crate::driver::ahci::constants::*;
 use crate::util::{MemoryWrite, MemoryRead, MemoryReadWrite};
-use crate::driver::ahci::port::{HbaPort, HbaPortInterruptType};
+//use crate::driver::ahci::port::{HbaPort, HbaPortInterruptType};
 use core::ptr;
+use crate::driver::ahci::port::{HbaPortInterruptType, HbaPort};
 
 
 // Main AHCI Driver type ///////////////////////////////////////////////////////
@@ -484,9 +485,4 @@ pub unsafe fn test_read(port: &mut HbaPort, start_lba_addr: u64, count: u16, buf
     port.submit_command(slot, header, cmd_table);
     Ok(())
 }
-
-
-
-
-
 

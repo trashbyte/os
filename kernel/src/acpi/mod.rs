@@ -2,35 +2,39 @@
 // Copyright (c) 2020 trashbyte
 // See LICENSE.txt for full license
 
-use acpi_crate::{AcpiHandler, PhysicalMapping};
-use acpi_crate::interrupt::InterruptModel;
+use acpi_crate::{AcpiTables, AcpiHandler, PhysicalMapping};
+use acpi_crate::platform::interrupt::InterruptModel;
 use core::ptr::NonNull;
+use alloc::sync::Arc;
 use crate::{PHYS_MEM_OFFSET};
 use crate::arch::apic::APIC;
 
 
-pub struct OsAcpiHandler {
+pub struct OsAcpiHandlerInner {
     offset: u64,
 }
 
+#[derive(Clone)]
+pub struct OsAcpiHandler(Arc<OsAcpiHandlerInner>);
+
 impl OsAcpiHandler {
     pub fn new(offset: u64) -> Self {
-        Self { offset }
+        Self(Arc::new(OsAcpiHandlerInner { offset }))
     }
 }
 
 impl AcpiHandler for OsAcpiHandler {
-    fn map_physical_region<T>(&mut self, physical_address: usize, size: usize) -> PhysicalMapping<T> {
+    unsafe fn map_physical_region<T>(&self, physical_address: usize, size: usize) -> PhysicalMapping<Self, T> {
         // all physical memory is already mapped
-        PhysicalMapping {
-            physical_start: physical_address,
-            virtual_start: NonNull::new((physical_address + self.offset as usize) as *mut T).unwrap(),
-            region_length: size,
-            mapped_length: size
-        }
+        PhysicalMapping::new(
+            physical_address,
+            NonNull::new((physical_address + self.0.offset as usize) as *mut T).unwrap(),
+            size,
+            size,
+            self.clone())
     }
 
-    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {
+    fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {
         // all physical memory is already mapped
     }
 }
@@ -52,10 +56,9 @@ pub fn init() {
     }
     let rdsp_phys_addr = rdsp_addr.unwrap() - PHYS_MEM_OFFSET;
 
-    let mut acpi_handler = OsAcpiHandler::new(PHYS_MEM_OFFSET);
-    //let acpi = parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
-    let acpi = acpi_crate::parse_rsdp(&mut acpi_handler, rdsp_phys_addr as usize).unwrap();
-    let apic_slot = acpi.interrupt_model.as_ref().unwrap();
+    let acpi_handler = OsAcpiHandler::new(PHYS_MEM_OFFSET);
+    let acpi = unsafe { AcpiTables::from_rsdp(acpi_handler.clone(), rdsp_phys_addr as usize).unwrap() };
+    let apic_slot = acpi.platform_info().unwrap().interrupt_model;
     if let InterruptModel::Apic(a) = apic_slot {
         *(crate::arch::apic::LOCAL_APIC.lock()) = APIC::new(a.local_apic_address);
     }

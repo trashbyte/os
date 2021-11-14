@@ -57,7 +57,7 @@ impl HbaPortTaskFileData {
     }
 }
 
-
+#[derive(Clone, Copy)]
 pub struct HbaPort {
     pub port_num: u32,
     pub port_mem_base_addr: PhysAddr,

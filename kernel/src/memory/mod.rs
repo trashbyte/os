@@ -5,7 +5,7 @@
 pub mod allocator;
 
 use x86_64::{structures::paging::PageTable, VirtAddr, PhysAddr};
-use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, PhysFrame, UnusedPhysFrame};
+use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, PhysFrame};
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 use lazy_static::lazy_static;
 
@@ -61,13 +61,13 @@ impl BootInfoFrameAllocator {
 
 // TODO: deallocate frames
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<UnusedPhysFrame> {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let frame = GLOBAL_MEMORY_MAP.lock().iter()
             .filter(|r| r.region_type == MemoryRegionType::Usable)
             .map(|r| r.range.start_addr()..r.range.end_addr())
             .flat_map(|r| r.step_by(4096))
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
-            .map(|f| unsafe { UnusedPhysFrame::new(f) })
+            //.map(|f| unsafe { UnusedPhysFrame::new(f) })
             .nth(self.next);
         self.next += 1;
         frame
