@@ -245,11 +245,15 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: InterruptStackFrame
 
     static KEYBOARD: OnceCell<Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> = OnceCell::uninit();
 
-    KEYBOARD.try_init_once(||
+    match KEYBOARD.try_init_once(||
         Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::MapLettersToUnicode))
-    );
+    ) {
+        Ok(_) => {},
+        Err(conquer_once::TryInitError::AlreadyInit) => {},
+        Err(e) => panic!("Couldn't initialize keyboard: {:?}", e)
+    }
 
-    let mut kb_cell = KEYBOARD.get().expect("Keyboard isn't initialized.");
+    let kb_cell = KEYBOARD.get().expect("Keyboard isn't initialized.");
     let mut keyboard = kb_cell.lock();
     let mut port = Port::new(0x60);
 

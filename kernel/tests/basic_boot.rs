@@ -7,14 +7,14 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(os::test_runner)]
+#![test_runner(kernel::test_runner)]
 
 use kernel::{println, serial_print, serial_println};
 use core::panic::PanicInfo;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    os::test_panic_handler(info)
+    kernel::test_panic_handler(info)
 }
 
 #[test_case]

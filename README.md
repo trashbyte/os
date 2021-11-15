@@ -16,17 +16,18 @@ As this project is still in its infancy, very few things are currently implement
 
 #### Done
 
- - [X] `cargo` cross-compilation toolchain (including full `cargo test` support and fast iteration with QEMU)
+ - [X] Simple to build: `cargo run` and `cargo test` work with cross-compilation toolchain
+ - [X] QEMU runner (including tests)
  - [X] Text-mode VGA output
  - [X] Serial output
- - [X] Interrupt handling
+ - [X] PIC and APIC Interrupt handling
  - [X] Virtual memory and rust global memory.allocator for collection types
  - [X] PCI device discovery
  - [X] Keyboard input
- - [X] ATA/IDE storage driver
+ - [X] ATA/IDE storage driver (refactoring)
  - [X] Terminal colors, scrollback
  - [X] PIT spin timer
- - [X] Basic shell
+ - [X] Basic shell (refactoring)
  - [X] RTC
 
 #### In Progress
@@ -40,7 +41,6 @@ As this project is still in its infancy, very few things are currently implement
  - [ ] Process fork/join
  - [ ] IPC
  - [ ] More advanced shell
- - [ ] Better timers with APIC
  - [ ] Program loading
  - [ ] User space
  - [ ] Syscalls

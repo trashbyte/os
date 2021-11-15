@@ -6,7 +6,7 @@
 
 #![no_std]
 #![no_main]
-#![test_runner(os::test_runner)]
+#![test_runner(kernel::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 #![feature(custom_test_frameworks)]
@@ -17,13 +17,12 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use bootloader::{BootInfo, entry_point};
+use bootloader::BootInfo;
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
 use kernel::{MemoryInitResults, println, serial_println};
 use kernel::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use chrono::{Utc, TimeZone, LocalResult};
-use kernel::util::debug_dump_memory;
 //use pest::Parser;
 
 
@@ -38,10 +37,10 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    os::test_panic_handler(info)
+    kernel::test_panic_handler(info)
 }
 
-entry_point!(kernel_main);
+bootloader::entry_point!(kernel_main);
 /// Main entry point for the kernel, called by the bootloader
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // search memory map provided by bootloader for a free memory region for AHCI

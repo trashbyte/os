@@ -65,7 +65,7 @@ pub fn init() {
     if let InterruptModel::Apic(a) = apic_slot {
         unsafe {
             let ioapic_addr = a.io_apics[0].address;
-            let mut ioapic = unsafe { x2apic::ioapic::IoApic::new(ioapic_addr as u64 + PHYS_MEM_OFFSET) };
+            let mut ioapic = x2apic::ioapic::IoApic::new(ioapic_addr as u64 + PHYS_MEM_OFFSET);
             ioapic.init(32);
 
             let mut entry = x2apic::ioapic::RedirectionTableEntry::default();

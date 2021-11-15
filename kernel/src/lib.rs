@@ -39,9 +39,7 @@ pub mod cpuio;
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
 
-#[cfg(test)]
-use bootloader::entry_point;
-use memory::BootInfoFrameAllocator;
+use crate::memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::instructions::port::Port;
 use crate::driver::ahci::AhciDriver;
