@@ -17,21 +17,22 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use os::{MemoryInitResults, println};
 use bootloader::{BootInfo, entry_point};
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
-use os::driver::ahci::constants::AHCI_MEMORY_SIZE;
+use kernel::{MemoryInitResults, println, serial_println};
+use kernel::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use chrono::{Utc, TimeZone, LocalResult};
+use kernel::util::debug_dump_memory;
 //use pest::Parser;
 
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    os::serial_println!("{}", info);
-    os::println!("{}", info);
-    os::util::halt_loop()
+    serial_println!("{}", info);
+    println!("{}", info);
+    kernel::util::halt_loop()
 }
 
 #[cfg(test)]
@@ -40,10 +41,11 @@ fn panic(info: &PanicInfo) -> ! {
     os::test_panic_handler(info)
 }
 
-
 entry_point!(kernel_main);
+/// Main entry point for the kernel, called by the bootloader
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    let mut mmap_lock = os::memory::GLOBAL_MEMORY_MAP.lock();
+    // search memory map provided by bootloader for a free memory region for AHCI
+    let mut mmap_lock = kernel::memory::GLOBAL_MEMORY_MAP.lock();
     let mut found_ahci_mem = None;
     for region in boot_info.memory_map.iter() {
         if found_ahci_mem.is_none() && region.region_type == MemoryRegionType::Usable &&
@@ -68,26 +70,27 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             mmap_lock.add_region(region.clone());
         }
     }
-//    for region in mmap_lock.iter() {
-//        serial_println!("{:?}", region);
-//    }
+   // for region in mmap_lock.iter() {
+   //     os::serial_println!("{:?}", region);
+   // }
     drop(mmap_lock);
     if found_ahci_mem.is_none() {
         panic!("Failed to find free space for AHCI memory.");
     }
     let found_ahci_mem = found_ahci_mem.unwrap().range;
     for addr in found_ahci_mem.start_addr()..found_ahci_mem.end_addr() {
+        // zero out all AHCI memory
         unsafe { *((addr + boot_info.physical_memory_offset) as *mut u8) = 0 }
     }
 
-    os::gdt_idt_init();
+    kernel::gdt_idt_init();
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = os::memory_init(phys_mem_offset);
-    os::init_devices();
-    os::apic_init();
-    os::arch::rtc::init_rtc();
+    let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = kernel::memory_init(phys_mem_offset);
+    let _pci_infos = kernel::init_devices();
 
-    let current_time_secs = os::arch::rtc::Rtc::new().time();
+    kernel::arch::rtc::init_rtc();
+
+    let current_time_secs = kernel::arch::rtc::Rtc::new().time();
     let current_time = match Utc.timestamp_opt(current_time_secs as i64, 0) {
         LocalResult::None => {
             println!("ERROR: Failed to get current time - Invalid timestamp: {}", current_time_secs);
@@ -101,21 +104,22 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
     println!("Current time is: {}", current_time);
 
-   // let mut ahci_driver = unsafe {
-   //     os::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
-   // };
-
-//    let mut buf = [0u16; 4096];
-//    unsafe {
-//        let mut port = ahci_driver.ports[0].as_mut().unwrap();
-//        os::driver::ahci::test_read(&mut port, 0, 8, (&mut buf) as *mut [u16] as *mut u16).unwrap();
-//    }
-//
-//    for _ in 0..1000000 {}
-//    unsafe {
-//        let addr = ahci_driver.ports[0].as_mut().unwrap().cmd_list_addr.as_u64() + phys_mem_offset.as_u64();
-//        debug_dump_memory(VirtAddr::new(addr), 0x20);
-//    }
+   //  let mut ahci_driver = unsafe {
+   //     kernel::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
+   //  };
+   //
+   //  let mut buf = [0u16; 4096];
+   //  unsafe {
+   //     let mut port = ahci_driver.ports[0].as_mut().unwrap();
+   //     kernel::driver::ahci::test_read(&mut port, 0, 8, (&mut buf) as *mut [u16] as *mut u16).unwrap();
+   //  }
+   //
+   //  // TODO: [HACK] there's gotta be a better way to do a wait here
+   //  for _ in 0..1000000 {}
+   //  unsafe {
+   //     let addr = ahci_driver.ports[0].as_mut().unwrap().cmd_list_addr.as_u64() + phys_mem_offset.as_u64();
+   //     debug_dump_memory(VirtAddr::new(addr), 0x20);
+   // }
 
     // let pairs = IdentParser::parse(Rule::expr, r##" ls() + a_29 * 3 "##).unwrap_or_else(|e| panic!("{}", e));
     // for pair in pairs {
@@ -135,12 +139,12 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     //     }
     // }
 
-    (*os::shell::SHELL.lock()).submit();
+    (*kernel::shell::SHELL.lock()).submit();
 
     #[cfg(test)]
     test_main();
 
-    os::util::halt_loop()
+    kernel::util::halt_loop()
 }
 
 // #[derive(Parser)]

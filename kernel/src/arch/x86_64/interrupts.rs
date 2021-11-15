@@ -6,18 +6,60 @@
 
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use spin;
-use lazy_static::lazy_static;
+use conquer_once::spin::OnceCell;
 use crate::{print, println};
 use crate::util::halt_loop;
 
 
-lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
+pub const PIC_1_OFFSET: u8 = 32;
+pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+
+pub static PICS: spin::Mutex<ChainedPics> =
+    spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+
+pub static LOCAL_APIC: spin::Mutex<Option<LocalApic>> = spin::Mutex::new(None);
+pub static IO_APIC: spin::Mutex<Option<IoApic>> = spin::Mutex::new(None);
+
+static IDT: OnceCell<InterruptDescriptorTable> = OnceCell::uninit();
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum InterruptIndex {
+    Timer = 32,
+    Keyboard,
+    Cascade,
+    Com2,
+    Com1,
+    LPT2,
+    FloppyDisk,
+    LPT1,
+    CMOS,
+    Peripheral1,
+    Peripheral2,
+    Peripheral3,
+    PS2Mouse,
+    Coprocessor,
+    PrimaryATA,
+    SecondaryATA,
+}
+
+impl InterruptIndex {
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub fn as_usize(self) -> usize {
+        usize::from(self.as_u8())
+    }
+}
+
+pub fn init_idt() {
+    IDT.try_init_once(|| {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         unsafe {
             idt.double_fault.set_handler_fn(double_fault_handler)
-               .set_stack_index(crate::arch::gdt::DOUBLE_FAULT_IST_INDEX);
+                .set_stack_index(crate::arch::gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt.non_maskable_interrupt.set_handler_fn(non_maskable_interrupt_handler);
@@ -53,50 +95,16 @@ lazy_static! {
         idt[InterruptIndex::PrimaryATA.as_usize()].set_handler_fn(disk_irq_handler);
         idt[InterruptIndex::SecondaryATA.as_usize()].set_handler_fn(disk_irq_handler);
         idt
-    };
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum InterruptIndex {
-    Timer = 32,
-    Keyboard,
-    Cascade,
-    Com2,
-    Com1,
-    LPT2,
-    FloppyDisk,
-    LPT1,
-    CMOS,
-    Peripheral1,
-    Peripheral2,
-    Peripheral3,
-    PS2Mouse,
-    Coprocessor,
-    PrimaryATA,
-    SecondaryATA,
-}
-
-impl InterruptIndex {
-    fn as_u8(self) -> u8 {
-        self as u8
-    }
-
-    fn as_usize(self) -> usize {
-        usize::from(self.as_u8())
-    }
-}
-
-pub fn init_idt() {
-    IDT.load();
+    }).expect("init_idt should only be called once");
+    IDT.get().unwrap().load();
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
-extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, _e: u64) -> ! {
-    panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, e: u64) -> ! {
+    panic!("EXCEPTION: DOUBLE FAULT\n{:#?}\n{}", stack_frame, e);
 }
 
 extern "x86-interrupt" fn page_fault_handler(frame: InterruptStackFrame, err: PageFaultErrorCode) {
@@ -207,7 +215,11 @@ extern "x86-interrupt" fn overflow_handler(frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn disk_irq_handler(_frame: InterruptStackFrame) {
     println!("disk irq");
-    unsafe { Port::<u8>::new(0x20).write(0x20); }
+
+    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+        Some(apic) => unsafe { apic.end_of_interrupt() },
+        None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
+    }
 }
 
 static mut TICKS: u64 = 0;
@@ -216,23 +228,29 @@ pub fn ticks() -> u64 { unsafe { TICKS } }
 extern "x86-interrupt" fn timer_interrupt_handler(_frame: InterruptStackFrame) {
     unsafe {
         TICKS += 5;
-        if TICKS % 1000 == 0 {
-            print!(".");
-        }
+        // if TICKS % 1000 == 0 {
+        //     print!(".");
+        // }
     }
-    unsafe { Port::<u8>::new(0x20).write(0x20); }
+
+    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+        Some(apic) => unsafe { apic.end_of_interrupt() },
+        None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
+    }
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: InterruptStackFrame) {
     use pc_keyboard::{Keyboard, ScancodeSet1, DecodedKey, layouts};
     use spin::Mutex;
 
-    lazy_static! {
-        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
-            Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::MapLettersToUnicode));
-    }
+    static KEYBOARD: OnceCell<Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> = OnceCell::uninit();
 
-    let mut keyboard = KEYBOARD.lock();
+    KEYBOARD.try_init_once(||
+        Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::MapLettersToUnicode))
+    );
+
+    let mut kb_cell = KEYBOARD.get().expect("Keyboard isn't initialized.");
+    let mut keyboard = kb_cell.lock();
     let mut port = Port::new(0x60);
 
     let scancode: u8 = unsafe { port.read() };
@@ -270,7 +288,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: InterruptStackFrame
         }
     }
 
-    unsafe { Port::<u8>::new(0x20).write(0x20); }
+    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+        Some(apic) => unsafe { apic.end_of_interrupt() },
+        None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
+    }
 }
 
 extern "x86-interrupt" fn generic_interrupt_handler(_frame: InterruptStackFrame) {
@@ -285,6 +306,9 @@ extern "x86-interrupt" fn generic_interrupt_handler(_frame: InterruptStackFrame)
 use crate::{serial_print, serial_println};
 use x86_64::instructions::port::Port;
 use pc_keyboard::{KeyCode, KeyState, HandleControl};
+use pic8259::ChainedPics;
+use x2apic::lapic::LocalApic;
+use x2apic::ioapic::IoApic;
 
 #[test_case]
 fn test_breakpoint_exception() {

@@ -106,70 +106,29 @@ pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
 // Initialization //////////////////////////////////////////////////////////////
 
 /// Basic kernel initialization
-///
 /// NOTE: We do NOT have a valid heap yet, so nothing here can use `alloc` types.
 pub fn gdt_idt_init() {
     arch::gdt::init();
     arch::interrupts::init_idt();
-    let mut wait_port: Port<u8> = Port::new(0x80);
-    let mut wait = || unsafe { wait_port.write(0); };
-    let mut pic1_command: Port<u8> = Port::new(0x20);
-    let mut pic1_data: Port<u8> = Port::new(0x21);
-    let mut pic2_command: Port<u8> = Port::new(0xA0);
-    let mut pic2_data: Port<u8> = Port::new(0xA1);
 
-    unsafe {
-        // init command (3 data bytes)
-        pic1_command.write(0x11);
-        wait();
-        pic2_command.write(0x11);
-        wait();
-
-        // interrupt offsets
-        pic1_data.write(0x20);
-        wait();
-        pic2_data.write(0x28);
-        wait();
-
-        // chaining
-        pic1_data.write(4);
-        wait();
-        pic2_data.write(2);
-        wait();
-
-        // mode
-        pic1_data.write(0x01);
-        wait();
-        pic2_data.write(0x01);
-        wait();
-
-        // after init command, mask all interrupts
-        pic1_data.write(0xFF);
-        wait();
-        pic2_data.write(0xFF);
+    if crate::arch::interrupts::LOCAL_APIC.lock().is_none() {
+        unsafe { arch::interrupts::PICS.lock().initialize() };
+    }
+    else {
+        // APIC is initialized later
     }
 
     // set PIT interval to ~200 Hz
-//    unsafe {
-//        // channel 0, low+high byte, mode 2, binary mode
-//        Port::<u8>::new(0x43).write(0b00110100);
-//        // set channel 0 interval to 5966 (0x174e)
-//        let mut port = Port::<u8>::new(0x40);
-//        port.write(0x4e);
-//        port.write(0x17);
-//    }
+   unsafe {
+       // channel 0, low+high byte, mode 2, binary mode
+       Port::<u8>::new(0x43).write(0b00110100);
+       // set channel 0 interval to 5966 (0x174e)
+       let mut port = Port::<u8>::new(0x40);
+       port.write(0x4e);
+       port.write(0x17);
+   }
 
     x86_64::instructions::interrupts::enable();
-}
-
-pub fn apic_init() {
-    // enable APIC
-    unsafe {
-        let apic_base = crate::arch::apic::LOCAL_APIC.lock().base_addr;
-        let addr = apic_base + x86::apic::xapic::XAPIC_SVR as u64 + PHYS_MEM_OFFSET;
-        let old = *(addr as *const u32);
-        *(addr as *mut u32) = old | 0x100;
-    }
 }
 
 #[allow(dead_code)]
@@ -187,9 +146,9 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
     MemoryInitResults { mapper, frame_allocator }
 }
 
-pub fn init_devices() {
+pub fn init_devices() -> Vec<PciDeviceInfo> {
     let pci_infos = tinypci::brute_force_scan();
-    for i in pci_infos {
+    for i in pci_infos.iter() {
         match i.full_class {
             tinypci::PciFullClass::MassStorage_IDE => {
                 serial_println!("Found IDE device: bus {} device {}", i.bus, i.device);
@@ -222,6 +181,8 @@ pub fn init_devices() {
     // let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
     // unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
     crate::acpi::init();
+
+    pci_infos
 }
 
 pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {

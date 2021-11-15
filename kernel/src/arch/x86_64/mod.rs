@@ -4,7 +4,6 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-pub mod apic;
 pub mod cpu;
 pub mod gdt;
 pub mod rtc;

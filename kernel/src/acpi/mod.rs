@@ -9,7 +9,8 @@ use acpi_crate::platform::interrupt::InterruptModel;
 use core::ptr::NonNull;
 use alloc::sync::Arc;
 use crate::{PHYS_MEM_OFFSET};
-use crate::arch::apic::APIC;
+use x2apic::lapic::LocalApicBuilder;
+use x2apic::ioapic::IrqFlags;
 
 
 pub struct OsAcpiHandlerInner {
@@ -62,10 +63,33 @@ pub fn init() {
     let acpi = unsafe { AcpiTables::from_rsdp(acpi_handler.clone(), rdsp_phys_addr as usize).unwrap() };
     let apic_slot = acpi.platform_info().unwrap().interrupt_model;
     if let InterruptModel::Apic(a) = apic_slot {
-        *(crate::arch::apic::LOCAL_APIC.lock()) = APIC::new(a.local_apic_address);
+        unsafe {
+            let ioapic_addr = a.io_apics[0].address;
+            let mut ioapic = unsafe { x2apic::ioapic::IoApic::new(ioapic_addr as u64 + PHYS_MEM_OFFSET) };
+            ioapic.init(32);
+
+            let mut entry = x2apic::ioapic::RedirectionTableEntry::default();
+            entry.set_mode(x2apic::ioapic::IrqMode::External);
+            entry.set_flags(IrqFlags::LEVEL_TRIGGERED | IrqFlags::LOW_ACTIVE | IrqFlags::MASKED);
+            entry.set_dest(0); // CPU(s)
+            ioapic.set_table_entry(crate::arch::interrupts::InterruptIndex::Keyboard.as_u8(), entry);
+
+            ioapic.enable_irq(crate::arch::interrupts::InterruptIndex::Keyboard.as_u8()-32);
+
+            *(crate::arch::interrupts::IO_APIC.lock()) = Some(ioapic);
+        }
+        let mut lapic = LocalApicBuilder::new()
+            .timer_vector(crate::arch::interrupts::InterruptIndex::Timer.as_usize())
+            .error_vector(crate::arch::interrupts::InterruptIndex::Cascade.as_usize())
+            .spurious_vector(0xFF)
+            .set_xapic_base(a.local_apic_address + PHYS_MEM_OFFSET)
+            .build()
+            .unwrap_or_else(|err| panic!("{}", err));
+        unsafe { lapic.enable(); }
+        *(crate::arch::interrupts::LOCAL_APIC.lock()) = Some(lapic);
     }
     else {
-        panic!("No APIC found. Current kernel requires APIC.");
+        crate::println!("No APIC found. Using chained PICs as fallback.");
     }
     //let mut aml_context = AmlContext::new();
     //let dsdt = acpi.dsdt.unwrap();
