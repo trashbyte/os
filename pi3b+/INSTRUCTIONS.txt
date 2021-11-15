@@ -1,0 +1,5 @@
+To run stock RasPiOS Lite on QEMU as emulated raspi3b+:
+
+1. Download 2021-10-30-raspios-bullseye-armhf-lite.img from the Raspberry Pi website and put it in this folder.
+2. Mount the disk image and extract bcm2710-rpi-3-b-plus.dtb and kernel8.img from the 'boot' partition. Then unmount the disk image.
+3. With the disk image and extracted files in this folder, run the 'run rpios' script for your OS.

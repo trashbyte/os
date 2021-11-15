@@ -3,3 +3,5 @@
 /.idea
 *.iml
 *.img
+pi3b+/*.img
+pi3b+/*.dtb
