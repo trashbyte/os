@@ -15,10 +15,10 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use crate::path::Path;
 use crate::util::UUID;
-use alloc::rc::Rc;
 use crate::device::block::{BlockDevice};
 use crate::fs::{FsResult, FsError, Filesystem, VfsNodeType, VfsDirectoryEntry};
 use core::iter::FromIterator;
+use alloc::sync::Arc;
 
 const ROOT_INODE: u64 = 2;
 
@@ -74,7 +74,7 @@ pub struct Ext2JournalInfo {
 
 // TODO: is there any point in using 64-bit inode/block addrs here?
 pub struct Ext2Filesystem {
-    pub media: Rc<BlockDevice>,
+    pub media: Arc<BlockDevice>,
     pub filesystem_id: UUID,
     pub journal_id: UUID,
     pub volume_name: String,
@@ -106,7 +106,7 @@ pub struct Ext2Filesystem {
     pub journal_info: Option<Ext2JournalInfo>,
 }
 impl Ext2Filesystem {
-    pub unsafe fn read_from(media: Rc<BlockDevice>) -> FsResult<Self> {
+    pub unsafe fn read_from(media: &Arc<BlockDevice>) -> FsResult<Self> {
         let buffer = media.read(0)?;
         let header = (*(&buffer[0x400..0x454] as *const [u8] as *const SuperblockHeader)).clone();
         if header.check_signature != 0xEF53 {

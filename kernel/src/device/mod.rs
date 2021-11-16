@@ -4,7 +4,7 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-//pub mod physical;
-//pub mod virt;
-//pub mod block;
+pub mod physical;
+pub mod virt;
+pub mod block;
 pub mod serial;

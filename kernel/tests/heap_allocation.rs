@@ -28,7 +28,16 @@ fn main(boot_info: &'static BootInfo) -> ! {
     use memory::BootInfoFrameAllocator;
     use x86_64::VirtAddr;
 
-    kernel::gdt_idt_init();
+    kernel::arch::gdt::init();
+    kernel::arch::interrupts::early_init_interrupts();
+
+    {
+        let mut mmap_lock = kernel::memory::GLOBAL_MEMORY_MAP.lock();
+        for region in boot_info.memory_map.iter() {
+            mmap_lock.add_region(region.clone());
+        }
+    }
+
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe {
@@ -65,7 +74,7 @@ fn large_vec() {
 #[test_case]
 fn many_boxes() {
     serial_print!("many_boxes... ");
-    for i in 0..100000 {
+    for i in 0..1000000 {
         let x = Box::new(i);
         assert_eq!(*x, i);
     }

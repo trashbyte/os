@@ -20,7 +20,7 @@ use core::panic::PanicInfo;
 use bootloader::BootInfo;
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
-use kernel::{MemoryInitResults, println, serial_println, both_println};
+use kernel::{MemoryInitResults, both_println};
 use kernel::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use chrono::{Utc, TimeZone, LocalResult};
 //use pest::Parser;
@@ -29,8 +29,7 @@ use chrono::{Utc, TimeZone, LocalResult};
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    serial_println!("{}", info);
-    println!("{}", info);
+    both_println!("{}", info);
     kernel::util::halt_loop()
 }
 
@@ -44,12 +43,12 @@ bootloader::entry_point!(kernel_main);
 /// Main entry point for the kernel, called by the bootloader
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // search memory map provided by bootloader for a free memory region for AHCI
-    both_println!("Finding memory region for AHCI");
+    both_println!("Building global memory map");
     let mut mmap_lock = kernel::memory::GLOBAL_MEMORY_MAP.lock();
     let mut found_ahci_mem = None;
     for region in boot_info.memory_map.iter() {
         if found_ahci_mem.is_none() && region.region_type == MemoryRegionType::Usable &&
-                region.range.end_addr() - region.range.start_addr() >= AHCI_MEMORY_SIZE {
+            region.range.end_addr() - region.range.start_addr() >= AHCI_MEMORY_SIZE {
 
             let ahci_region = MemoryRegion {
                 range: FrameRange::new(region.range.start_addr(), region.range.start_addr() + AHCI_MEMORY_SIZE),
@@ -70,19 +69,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             mmap_lock.add_region(region.clone());
         }
     }
-   // for region in mmap_lock.iter() {
-   //     os::serial_println!("{:?}", region);
-   // }
+    // for region in mmap_lock.iter() {
+    //     os::serial_println!("{:?}", region);
+    // }
     drop(mmap_lock);
     if found_ahci_mem.is_none() {
         panic!("Failed to find free space for AHCI memory.");
     }
     let found_ahci_mem = found_ahci_mem.unwrap().range;
-    both_println!("AHCI memory initialized at {}..{}", found_ahci_mem.start_addr(), found_ahci_mem.end_addr());
-    for addr in found_ahci_mem.start_addr()..found_ahci_mem.end_addr() {
-        // zero out all AHCI memory
-        unsafe { *((addr + boot_info.physical_memory_offset) as *mut u8) = 0 }
-    }
 
     kernel::arch::gdt::init();
     kernel::arch::interrupts::early_init_interrupts();
@@ -103,7 +97,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     kernel::acpi::init();
     kernel::arch::interrupts::late_init_interrupts();
 
-    let _pci_infos = kernel::init_devices();
+    let pci_infos = kernel::init_devices();
 
     kernel::arch::rtc::init_rtc();
 
@@ -121,15 +115,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     };
     both_println!("Current time is: {}", current_time);
 
-   //  let mut ahci_driver = unsafe {
-   //     kernel::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
-   //  };
-   //
-   //  let mut buf = [0u16; 4096];
-   //  unsafe {
-   //     let mut port = ahci_driver.ports[0].as_mut().unwrap();
-   //     kernel::driver::ahci::test_read(&mut port, 0, 8, (&mut buf) as *mut [u16] as *mut u16).unwrap();
-   //  }
+    let _ahci_driver = unsafe {
+       kernel::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
+    };
+
+    // let mut buf = Box::new([0u16; 4096]);
+    // unsafe {
+    //    let mut port = ahci_driver.ports[0].as_mut().unwrap();
+    //    kernel::driver::ahci::test_read(&mut port, 0, 8, buf.as_mut_ptr()).unwrap();
+    // }
+    // for i in 0..4096 {
+    //     serial_println!("{}", buf[i]);
+    // }
    //
    //  // TODO: [HACK] there's gotta be a better way to do a wait here
    //  for _ in 0..1000000 {}

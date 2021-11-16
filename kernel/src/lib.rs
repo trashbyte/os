@@ -24,10 +24,10 @@ pub mod arch;
 pub mod device;
 pub mod driver;
 pub mod encoding;
-//pub mod fs;
+pub mod fs;
 pub mod memory;
 pub mod path;
-//pub mod service;
+pub mod service;
 pub mod shell;
 pub mod util;
 pub mod vga_buffer;
@@ -40,11 +40,9 @@ use crate::memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::instructions::port::Port;
 use crate::driver::ahci::AhciDriver;
-use crate::util::halt_loop;
 //use crate::fs::vfs::VFS;
 //use crate::device::block::{BlockDevice, BlockDeviceMedia};
 //use crate::fs::partition::{MbrPartition, PartitionType, Partition};
-//use alloc::rc::Rc;
 //use crate::service::DiskService;
 //use crate::fs::ext2::Ext2Filesystem;
 #[cfg(test)]
@@ -52,27 +50,52 @@ use bootloader::BootInfo;
 use tinypci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
 use core::ops::Range;
+use crate::service::DiskService;
+use crate::fs::partition::{MbrPartition, PartitionType, Partition};
+use alloc::sync::Arc;
+use crate::device::block::{BlockDevice, BlockDeviceMedia};
 
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 pub const KERNEL_STACK_ADDR: u64 = 0xFFFF00000000;
 
-// Test runner /////////////////////////////////////////////////////////////////
+// Testing stuff ///////////////////////////////////////////////////////////////////////////////////
 
-pub fn test_runner(tests: &[&dyn Fn()]) {
+pub trait Testable {
+    fn run(&self) -> ();
+}
+
+impl<T> Testable for T
+    where
+        T: Fn(),
+{
+    fn run(&self) {
+        serial_print!("{}...\t", core::any::type_name::<T>());
+        self();
+        serial_println!("[ok]");
+    }
+}
+
+pub fn test_runner(tests: &[&dyn Testable]) {
     serial_println!("Running {} tests", tests.len());
     for test in tests {
-        test();
+        test.run();
     }
     exit_qemu(QemuExitCode::Success);
 }
-
-// Handlers ////////////////////////////////////////////////////////////////////
 
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     exit_qemu(QemuExitCode::Failed);
-    halt_loop()
+    loop {}
+}
+
+/// Entry point for `cargo test`
+#[cfg(test)]
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    test_main();
+    loop {}
 }
 
 #[cfg(test)]
@@ -84,18 +107,6 @@ fn panic(info: &PanicInfo) -> ! {
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
-}
-
-// Testing entry point /////////////////////////////////////////////////////////
-
-/// Entry point for `cargo test`
-#[cfg(test)]
-#[no_mangle]
-pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
-    serial_println!("[ok]\n");
-    gdt_idt_init();
-    test_main();
-    util::halt_loop()
 }
 
 // Initialization //////////////////////////////////////////////////////////////
@@ -136,26 +147,34 @@ pub fn init_devices() -> Vec<PciDeviceInfo> {
         }
     }
 
-    // unsafe {
-    //     crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
-    //     (*crate::service::DISK_SERVICE.as_mut().unwrap().lock()).init();
-    // }
-    // let mut disk_srv = unsafe { crate::service::DISK_SERVICE.as_ref().unwrap().lock() };
-    // (*disk_srv).init();
-    // let part = MbrPartition {
-    //     media: (*disk_srv).get(2).unwrap(),
-    //     first_sector: 0,
-    //     last_sector: 0,
-    //     partition_type: PartitionType::Filesystem
-    // };
-    // let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
-    // let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
+    let mut disk_srv = unsafe {
+        crate::service::DISK_SERVICE = Some(spin::Mutex::new(DiskService::new()));
+        crate::service::DISK_SERVICE.as_mut().unwrap().lock()
+    };
+    (*disk_srv).init();
+    let part = MbrPartition {
+        media: (*disk_srv).get(2).unwrap(),
+        first_sector: 0,
+        last_sector: 0,
+        partition_type: PartitionType::Filesystem
+    };
+    let _block_dev = Arc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
+    // let fs = unsafe { Arc::new(Ext2Filesystem::read_from(&block_dev).unwrap()) };
     // unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
 
     pci_infos
 }
 
 pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {
+    both_println!("Initializing AHCI controller");
+
+
+    for addr in ahci_mem_range.clone() {
+        // zero out all AHCI memory
+        *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0;
+    }
+    both_println!("AHCI memory initialized at {:x}..{:x}", ahci_mem_range.start, ahci_mem_range.end);
+
     let ahci_controller_info = pci_infos.iter()
         .filter(|x| { x.class() == PciClass::MassStorage })
         .next()

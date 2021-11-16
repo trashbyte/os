@@ -467,7 +467,7 @@ pub unsafe fn test_read(port: &mut HbaPort, start_lba_addr: u64, count: u16, buf
     // command header (points to table)
     let mut header = CommandHeader::new(slot);
     header.fis_length = 5;
-    header.prdt_len = (((count as u16) - 1) >> 4) + 1;
+    header.prdt_len = ((count - 1) >> 4) + 1;
 
     // build PRDT entries (8K bytes (16 sectors) each)
     let mut count = count as i32; // subtraction later can go below zero

@@ -8,7 +8,7 @@ use spin::Mutex;
 use crate::driver::ata::{AtaDrive, ide_identify};
 use hashbrown::HashMap;
 use crate::fs::ext2::Ext2Filesystem;
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 
 
 pub static mut DISK_SERVICE: Option<Mutex<DiskService>> = None;
@@ -16,13 +16,13 @@ pub static mut DISK_SERVICE: Option<Mutex<DiskService>> = None;
 
 
 pub struct DiskService {
-    drives: HashMap<u32, Rc<AtaDrive>>,
+    drives: HashMap<u32, Arc<AtaDrive>, ahash::RandomState>,
     next_id: u32,
 }
 impl DiskService {
     pub fn new() -> Self {
         Self {
-            drives: HashMap::new(),
+            drives: HashMap::default(),
             next_id: 1,
         }
     }
@@ -31,20 +31,20 @@ impl DiskService {
             for device in 0..2 {
                 unsafe {
                     if let Some(info) = ide_identify(bus, device) {
-                        self.drives.insert(self.next_id, Rc::new(AtaDrive::from_identify(info, bus, device)));
+                        self.drives.insert(self.next_id, Arc::new(AtaDrive::from_identify(info, bus, device)));
                         self.next_id += 1;
                     }
                 }
             }
         }
     }
-    pub fn get(&self, id: u32) -> Option<Rc<AtaDrive>> {
+    pub fn get(&self, id: u32) -> Option<Arc<AtaDrive>> {
         match self.drives.get(&id) {
             None => None,
             Some(dt) => Some(dt.clone())
         }
     }
-    pub fn iter(&self) -> hashbrown::hash_map::Iter<u32, Rc<AtaDrive>> {
+    pub fn iter(&self) -> hashbrown::hash_map::Iter<u32, Arc<AtaDrive>> {
         self.drives.iter()
     }
 }

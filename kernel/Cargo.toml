@@ -16,6 +16,7 @@ uart_16550 = "0.2.15"
 pc-keyboard = "0.5.1"
 linked_list_allocator = "0.9.1"
 hashbrown = { version = "0.11.2", default-features = false }
+ahash = { version = "0.7.6", default-features = false }
 conquer-once = { version = "0.3.2", default-features = false }
 #crypto_hashes
 #goblin = "0.2.0"
@@ -70,19 +71,19 @@ run-command = [
     "-smp", "4",
     "-m", "512M",
     "-drive", "format=raw,file={}",
-    #"-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
-    #"-device", "ahci,id=ahci",
-    #"-device", "ide-hd,bus=ahci.0,drive=vdisk",
-    #"-fda", "fda.img",
+    "-device", "ahci,id=ahci",
+    "-device", "ide-hd,bus=ahci.0,drive=vdisk",
     "-serial", "stdio"
 ]
 run-args = [
-    "-drive", "format=raw,file=hdb.img"
+    "-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
+    "-fda", "fda.img",
 ]
 test-args = [
-    "-drive", "format=raw,file=..\\hdb.img",
-    "-display", "none"
-    #"-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"
+    "-drive", "file=..\\hdb.img,if=none,format=raw,id=vdisk",
+    "-fda", "..\\fda.img",
+    "-display", "none",
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"
 ]
 test-success-exit-code = 33 # (0x10 << 1) | 1
 test-timeout = 30 # (in seconds)

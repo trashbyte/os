@@ -7,6 +7,8 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![feature(custom_test_frameworks)]
+#![test_runner(kernel::test_runner)]
 
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
@@ -15,9 +17,8 @@ use kernel::{exit_qemu, QemuExitCode, serial_print, serial_println};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    serial_print!("stack_overflow... ");
-
-    kernel::gdt_idt_init();
+    kernel::arch::gdt::init();
+    kernel::arch::interrupts::early_init_interrupts();
     init_test_idt();
 
     // trigger a stack overflow

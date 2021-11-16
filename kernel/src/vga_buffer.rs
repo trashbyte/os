@@ -327,11 +327,15 @@ fn test_newline() {
 fn test_wrapping() {
     serial_print!("test_wrapping... ");
 
-    let s = "A different, much longer string, one that is so long that it exceeds the length of the buffer and must be wrapped";
+    for _ in 0..SCREEN_HEIGHT+1 {
+        println!(); // ensure cursor is at the bottom of the terminal
+    }
+    let s = "A different, much longer test string (a string used for testing), a string that is soooooo long that it exceeds the length of the buffer and must be wrapped around on to the next line of the display.";
     print!("{}", s);
     for (i, c) in s.chars().enumerate() {
-        let row = if i < 80 { SCREEN_HEIGHT - 2 } else { SCREEN_HEIGHT - 1 };
-        let col = if i < 80 { i } else { i - 80 };
+        let row_offset = (s.len() - i + SCREEN_WIDTH/2) / SCREEN_WIDTH; // rounded down
+        let row = SCREEN_HEIGHT - 1 - row_offset;
+        let col = i % SCREEN_WIDTH;
         let screen_char = TERMINAL.lock().screen_buffer.chars[row][col].read();
         assert_eq!(char::from(screen_char.ascii_character), c);
     }

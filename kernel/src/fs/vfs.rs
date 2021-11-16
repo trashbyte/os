@@ -9,22 +9,22 @@ use crate::path::Path;
 use alloc::vec::Vec;
 use crate::fs::{FsResult, FsError, Filesystem, VfsDirectoryEntry};
 use spin::Mutex;
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 
 
 pub static mut GLOBAL_VFS: Option<Mutex<VFS>> = None;
 
 pub struct VFS {
-    mounts: HashMap<Path, Rc<dyn Filesystem>>,
+    mounts: HashMap<Path, Arc<dyn Filesystem>, ahash::RandomState>,
     //root_node: VfsNode,
 }
 impl VFS {
-    pub fn init(root: Rc<dyn Filesystem>) -> Self {
-        let mut mounts = HashMap::new();
+    pub fn init(root: Arc<dyn Filesystem>) -> Self {
+        let mut mounts = HashMap::default();
         mounts.insert("/".into(), root.clone());
         Self { mounts }
     }
-    pub fn mount(&mut self, path: Path, fs: Rc<dyn Filesystem>) -> FsResult<()> {
+    pub fn mount(&mut self, path: Path, fs: Arc<dyn Filesystem>) -> FsResult<()> {
         match self.mounts.get(&path) {
             Some(_) => { Err(FsError::AlreadyMounted) },
             None => {
@@ -44,7 +44,7 @@ impl VFS {
         }
     }
 
-    pub fn fs_for_path(&self, path: &Path) -> FsResult<&Rc<dyn Filesystem>> {
+    pub fn fs_for_path(&self, path: &Path) -> FsResult<&Arc<dyn Filesystem>> {
         // store deepest match (we want to match a mount at /foo/bar with higher precedence than /)
         let mut deepest_path = Path::new();
         let mut deepest_mount = None;

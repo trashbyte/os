@@ -394,13 +394,9 @@ extern "x86-interrupt" fn ps2_mouse_interrupt_handler(_frame: InterruptStackFram
 
 // Tests ///////////////////////////////////////////////////////////////////////
 
-
-#[cfg(test)]
-use crate::{serial_print, serial_println};
-
 #[test_case]
 fn test_breakpoint_exception() {
-    serial_print!("test_breakpoint_exception...");
+    crate::arch::gdt::init();
+    crate::arch::interrupts::early_init_interrupts();
     x86_64::instructions::interrupts::int3();
-    serial_println!("[ok]");
 }

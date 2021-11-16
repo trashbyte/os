@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use crate::driver::StorageDriver;
 use crate::util::UUID;
 use alloc::string::String;
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 use core::ops::Range;
 
 #[derive(Debug, Clone, Copy)]
@@ -60,14 +60,14 @@ pub struct GptPartitionTable {
 }
 
 pub struct MbrPartition {
-    pub media: Rc<dyn StorageDriver>,
+    pub media: Arc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,
 }
 
 pub struct GptPartition {
-    pub media: Rc<dyn StorageDriver>,
+    pub media: Arc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,
