@@ -27,14 +27,11 @@ pub mod encoding;
 //pub mod fs;
 pub mod memory;
 pub mod path;
-pub mod pci;
 //pub mod service;
 pub mod shell;
 pub mod util;
 pub mod vga_buffer;
 pub mod time;
-//pub mod pic8259_simple;
-pub mod cpuio;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
@@ -95,39 +92,13 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 #[cfg(test)]
 #[no_mangle]
 pub extern "C" fn _start(_boot_info: &'static BootInfo) -> ! {
-    serial_println!("[failed]\n");
+    serial_println!("[ok]\n");
     gdt_idt_init();
     test_main();
     util::halt_loop()
 }
 
 // Initialization //////////////////////////////////////////////////////////////
-
-/// Basic kernel initialization
-/// NOTE: We do NOT have a valid heap yet, so nothing here can use `alloc` types.
-pub fn gdt_idt_init() {
-    arch::gdt::init();
-    arch::interrupts::init_idt();
-
-    if crate::arch::interrupts::LOCAL_APIC.lock().is_none() {
-        unsafe { arch::interrupts::PICS.lock().initialize() };
-    }
-    else {
-        // APIC is initialized later
-    }
-
-    // set PIT interval to ~200 Hz
-   unsafe {
-       // channel 0, low+high byte, mode 2, binary mode
-       Port::<u8>::new(0x43).write(0b00110100);
-       // set channel 0 interval to 5966 (0x174e)
-       let mut port = Port::<u8>::new(0x40);
-       port.write(0x4e);
-       port.write(0x17);
-   }
-
-    x86_64::instructions::interrupts::enable();
-}
 
 #[allow(dead_code)]
 pub struct MemoryInitResults {
@@ -136,6 +107,7 @@ pub struct MemoryInitResults {
 }
 
 pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
+    both_println!("Initializing heap");
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
     memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
@@ -145,20 +117,21 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
 }
 
 pub fn init_devices() -> Vec<PciDeviceInfo> {
+    both_println!("Scanning for PCI devices");
     let pci_infos = tinypci::brute_force_scan();
     for i in pci_infos.iter() {
         match i.full_class {
             tinypci::PciFullClass::MassStorage_IDE => {
-                serial_println!("Found IDE device: bus {} device {}", i.bus, i.device);
+                both_println!("Found IDE device: bus {} device {}", i.bus, i.device);
             },
             tinypci::PciFullClass::MassStorage_ATA => {
-                serial_println!("Found ATA device: bus {} device {}", i.bus, i.device);
+                both_println!("Found ATA device: bus {} device {}", i.bus, i.device);
             },
             tinypci::PciFullClass::MassStorage_SATA => {
-                serial_println!("Found SATA device: bus {} device {}", i.bus, i.device);
+                both_println!("Found SATA device: bus {} device {}", i.bus, i.device);
             },
             _ => {
-                serial_println!("Found unsupported PCI device: bus {} device {} class {:?}", i.bus, i.device, i.full_class);
+                both_println!("Found unsupported PCI device: bus {} device {} class {:?}", i.bus, i.device, i.full_class);
             }
         }
     }
@@ -178,7 +151,6 @@ pub fn init_devices() -> Vec<PciDeviceInfo> {
     // let block_dev = Rc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
     // let fs = unsafe { Rc::new(Ext2Filesystem::read_from(block_dev.clone()).unwrap()) };
     // unsafe { crate::fs::vfs::GLOBAL_VFS = Some(spin::Mutex::new(VFS::init(fs))); }
-    crate::acpi::init();
 
     pci_infos
 }

@@ -20,7 +20,7 @@ use core::panic::PanicInfo;
 use bootloader::BootInfo;
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use x86_64::{VirtAddr};
-use kernel::{MemoryInitResults, println, serial_println};
+use kernel::{MemoryInitResults, println, serial_println, both_println};
 use kernel::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use chrono::{Utc, TimeZone, LocalResult};
 //use pest::Parser;
@@ -44,6 +44,7 @@ bootloader::entry_point!(kernel_main);
 /// Main entry point for the kernel, called by the bootloader
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // search memory map provided by bootloader for a free memory region for AHCI
+    both_println!("Finding memory region for AHCI");
     let mut mmap_lock = kernel::memory::GLOBAL_MEMORY_MAP.lock();
     let mut found_ahci_mem = None;
     for region in boot_info.memory_map.iter() {
@@ -77,14 +78,31 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         panic!("Failed to find free space for AHCI memory.");
     }
     let found_ahci_mem = found_ahci_mem.unwrap().range;
+    both_println!("AHCI memory initialized at {}..{}", found_ahci_mem.start_addr(), found_ahci_mem.end_addr());
     for addr in found_ahci_mem.start_addr()..found_ahci_mem.end_addr() {
         // zero out all AHCI memory
         unsafe { *((addr + boot_info.physical_memory_offset) as *mut u8) = 0 }
     }
 
-    kernel::gdt_idt_init();
+    kernel::arch::gdt::init();
+    kernel::arch::interrupts::early_init_interrupts();
+
+    // set PIT interval to ~200 Hz
+    // unsafe {
+    //     // channel 0, low+high byte, mode 2, binary mode
+    //     Port::<u8>::new(0x43).write(0b00110100);
+    //     // set channel 0 interval to 5966 (0x174e)
+    //     let mut port = Port::<u8>::new(0x40);
+    //     port.write(0x4e);
+    //     port.write(0x17);
+    // }
+
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = kernel::memory_init(phys_mem_offset);
+
+    kernel::acpi::init();
+    kernel::arch::interrupts::late_init_interrupts();
+
     let _pci_infos = kernel::init_devices();
 
     kernel::arch::rtc::init_rtc();
@@ -92,16 +110,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let current_time_secs = kernel::arch::rtc::Rtc::new().time();
     let current_time = match Utc.timestamp_opt(current_time_secs as i64, 0) {
         LocalResult::None => {
-            println!("ERROR: Failed to get current time - Invalid timestamp: {}", current_time_secs);
+            both_println!("ERROR: Failed to get current time - Invalid timestamp: {}", current_time_secs);
             Utc.timestamp(1577836800, 0) // fallback to 01/01/2020
         }
         LocalResult::Single(t) => t,
         LocalResult::Ambiguous(a, b) => {
-            println!("WARNING: Current time is ambiguous: {} or {}", a, b);
+            both_println!("WARNING: Current time is ambiguous: {} or {}", a, b);
             a
         }
     };
-    println!("Current time is: {}", current_time);
+    both_println!("Current time is: {}", current_time);
 
    //  let mut ahci_driver = unsafe {
    //     kernel::ahci_init(&pci_infos, found_ahci_mem.start_addr()..found_ahci_mem.end_addr())
@@ -137,6 +155,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     //         };
     //     }
     // }
+
+    both_println!("Boot complete!\n");
 
     (*kernel::shell::SHELL.lock()).submit();
 

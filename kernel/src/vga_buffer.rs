@@ -38,6 +38,20 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
+#[macro_export]
+macro_rules! both_print {
+    ($($arg:tt)*) => {
+        $crate::vga_buffer::_print(format_args!($($arg)*));
+        $crate::serial_print!("{}", format_args!($($arg)*));
+    }
+}
+
+#[macro_export]
+macro_rules! both_println {
+    () => ($crate::both_print!("\n"));
+    ($($arg:tt)*) => ($crate::both_print!("{}\n", format_args!($($arg)*)));
+}
+
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;

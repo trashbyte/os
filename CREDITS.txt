@@ -1,8 +1,5 @@
 trashbyte (trashbyte@github):
-  Most of the general coding work 
-
-Eric Kidd (emk@github):
-  pic8259_simple and cpuio, vendored from toyos-rs (MIT licensed)
+  Most of the general coding work
 
 RedoxOS:
   rtc.rs is based on RedoxOS's rtc.rs
