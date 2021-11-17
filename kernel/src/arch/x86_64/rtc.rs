@@ -9,7 +9,6 @@ use x86_64::instructions::port::Port;
 
 
 pub fn init_rtc() {
-    crate::both_println!("Initializing real-time clock");
     let mut rtc = Rtc::new();
     (*crate::time::TIME_START.lock()).0 = rtc.time();
 }
@@ -47,6 +46,7 @@ fn cvt_bcd(value: usize) -> usize {
 ///
 /// Don't worry about global state or duplication, this struct holds very little state.
 /// Just construct a new one wherever you need it. (But remember to set NMI appropriately!)
+#[derive(Debug)]
 pub struct Rtc {
     /// Address I/O port
     addr: Port<u8>,

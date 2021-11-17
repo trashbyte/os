@@ -43,7 +43,6 @@ lazy_static! {
 
 pub fn init() {
     GDT.0.load();
-    crate::println!("Initializing GDT");
     unsafe {
         x86_64::instructions::segmentation::CS::set_reg(GDT.1.code_selector);
         x86_64::instructions::tables::load_tss(GDT.1.tss_selector);

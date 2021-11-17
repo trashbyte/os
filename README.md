@@ -16,12 +16,12 @@ As this project is still in its infancy, very few things are currently implement
 
 #### Done
 
- - [X] Simple to build: `cargo run` and `cargo test` work with cross-compilation toolchain
+ - [X] Simple to build: `cargo build`, `run` and `test` work correctly without any extra arguments
  - [X] QEMU runner (including tests)
  - [X] Text-mode VGA output
  - [X] Serial output
  - [X] PIC and APIC Interrupt handling
- - [X] Virtual memory and rust global memory.allocator for collection types
+ - [X] Virtual memory and global memory allocator to enable Rust collection types
  - [X] PCI device discovery
  - [X] Keyboard input
  - [X] ATA/IDE storage driver (refactoring)
@@ -29,6 +29,7 @@ As this project is still in its infancy, very few things are currently implement
  - [X] PIT spin timer
  - [X] Basic shell (refactoring)
  - [X] RTC
+ - [X] Rust `async`/`await` support
 
 #### In Progress
 
@@ -58,7 +59,6 @@ As this project is still in its infancy, very few things are currently implement
  - [ ] GUI compositing and such
  - [ ] Networking
  - [ ] Sound
- - [ ] Rust `async`/`await` support
  - [ ] Native Rust stdlib, custom OS cross-compiler
 
 #### Things which I plan to support at some point, but aren't needed to move forward:
@@ -81,9 +81,9 @@ Right now I only have plans to support x86_64, but I may consider adding support
 Uhhh I don't have proper instructions for building although *in theory* it should be fairly simple (thank you cargo). If you want to be a guinea pig, then here's what I'd suggest:
 
  - Make sure your toolchain is up to date. Set the rustup override (or the default) to nightly. There's about a dozen reasons this won't build on stable.
- - Install xbuild and friends (`cargo install xbuild`).
+ - Install bootimage (`cargo install bootimage`).
  - Install QEMU and add the executable dir to your path.
- - Run `cargo xrun` and pray.
+ - Run `cargo run` and pray.
 
 If you end up trying this and run into issues, I guess you could email me about it (`github@trashbyte.io`) or ping me on masto ([@trashbyte](https://cybre.space/@trashbyte)) but I make no promises about being able to help you at this time. Also, you can check out [the tutorials here](https://os.phil-opp.com/) since I based my initial setup off of them. It might cover some steps I forgot.
 

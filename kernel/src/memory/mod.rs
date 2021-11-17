@@ -10,10 +10,13 @@ use x86_64::{structures::paging::PageTable, VirtAddr, PhysAddr};
 use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, PhysFrame};
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 use lazy_static::lazy_static;
+use spin::Mutex;
 
 lazy_static! {
-    pub static ref GLOBAL_MEMORY_MAP: spin::Mutex<MemoryMap> = spin::Mutex::new(MemoryMap::new());
+    pub static ref GLOBAL_MEMORY_MAP: Mutex<MemoryMap> = Mutex::new(MemoryMap::new());
 }
+
+pub static HAVE_ALLOC: Mutex<bool> = Mutex::new(false);
 
 
 /// Initialize a new OffsetPageTable.
@@ -31,11 +34,12 @@ pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static>
     let virt = physical_memory_offset + phys.as_u64();
     let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
-    let level_4_table = &mut *page_table_ptr;
-    OffsetPageTable::new(level_4_table, physical_memory_offset)
+    let level_4_table = unsafe { &mut *page_table_ptr };
+    unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
 }
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
+#[derive(Debug)]
 pub struct BootInfoFrameAllocator {
     next: usize,
 }

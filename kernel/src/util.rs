@@ -35,15 +35,6 @@ pub fn format_u32_as_bin_spaced(i: u32) -> String {
     string
 }
 
-/// Basic error type consisting solely of an error message string.
-#[derive(Debug)]
-pub struct SimpleError(&'static str);
-impl Display for SimpleError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// Trait for types that can be read from byte buffers.
 pub trait BufferRead {
     fn read_from_buffer(buffer: &Vec<u8>) -> Self;
@@ -89,7 +80,7 @@ pub unsafe fn debug_dump_memory(addr: VirtAddr, size: u32) {
     // value doesn't matter since it only reads `size` bytes in, so even if addr+0x1000
     // is invalid memory, if you only read 0x20 bytes, it'll be fine.
     assert!(size <= 65536);
-    let data = &*((addr.as_u64()) as *const [u8; 65536]);
+    let data = unsafe { &*((addr.as_u64()) as *const [u8; 65536]) };
     for i in 0..size {
         if i % 16 == 0 {
             serial_print!("\n{:#06X}   ", i);
@@ -104,8 +95,8 @@ pub unsafe fn read_c_str(addr: VirtAddr) -> String {
     let mut i = 0;
     loop {
         let ptr = (addr.as_u64() + i) as *const char;
-        if *ptr == '\0' { break; }
-        string.push(*ptr);
+        if unsafe { *ptr } == '\0' { break; }
+        string.push(unsafe { *ptr });
         i += 1;
     }
     string
@@ -115,7 +106,7 @@ pub unsafe fn read_c_str_with_len(addr: VirtAddr, len: usize) -> String {
     let mut string = String::new();
     let mut i = 0;
     loop {
-        let ptr = *((addr.as_u64() + i) as *const u8) as char;
+        let ptr = unsafe { *((addr.as_u64() + i) as *const u8) as char };
         if ptr == '\0' || i == len as u64 { break; }
         string.push(ptr);
         i += 1;
@@ -143,9 +134,7 @@ impl UUID {
     pub fn version(&self) -> u32 {
         ((self.0[6] >> 4) & 0xF) as u32
     }
-    pub fn variant(&self) -> u8 {
-        ((self.0[8] >> 5) & 0b111) as u8
-    }
+    pub fn variant(&self) -> u8 { (self.0[8] >> 5) & 0b111 }
 }
 impl Display for UUID {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {

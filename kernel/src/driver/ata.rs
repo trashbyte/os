@@ -90,26 +90,28 @@ impl AtaDrive {
             _ => unreachable!()
         };
 
-        Port::new(self.io + ATA_REG_HDDEVSEL).write(cmd | ((lba >> 24) & 0x0F) as u8);
-        Port::new(self.io + 1).write(0u8);
+        unsafe {
+            Port::new(self.io + ATA_REG_HDDEVSEL).write(cmd | ((lba >> 24) & 0x0F) as u8);
+            Port::new(self.io + 1).write(0u8);
 
-        // Single sector read
-        Port::new(self.io + ATA_REG_SECCOUNT0).write(1u8);
+            // Single sector read
+            Port::new(self.io + ATA_REG_SECCOUNT0).write(1u8);
 
-        // Select LBA
-        Port::new(self.io + ATA_REG_LBA0).write((lba & 0xFF) as u8);
-        Port::new(self.io + ATA_REG_LBA1).write(((lba >> 8) & 0xFF) as u8);
-        Port::new(self.io + ATA_REG_LBA2).write(((lba >> 16) & 0xFF) as u8);
+            // Select LBA
+            Port::new(self.io + ATA_REG_LBA0).write((lba & 0xFF) as u8);
+            Port::new(self.io + ATA_REG_LBA1).write(((lba >> 8) & 0xFF) as u8);
+            Port::new(self.io + ATA_REG_LBA2).write(((lba >> 16) & 0xFF) as u8);
 
-        // Select read command
-        Port::new(self.io + ATA_REG_COMMAND).write(ATA_CMD_READ_PIO);
+            // Select read command
+            Port::new(self.io + ATA_REG_COMMAND).write(ATA_CMD_READ_PIO);
 
-        // Wait until ready
-        self.poll();
+            // Wait until ready
+            self.poll();
+        }
 
         let mut port = Port::<u16>::new(self.io + ATA_REG_DATA);
         for i in 0..256 {
-            let double = port.read();
+            let double = unsafe { port.read() };
             buf[i*2] = (double & 0xFF) as u8;
             buf[i*2+1] = ((double >> 8) & 0xFF) as u8;
         }
@@ -119,7 +121,7 @@ impl AtaDrive {
     // TODO: errors and such
     pub unsafe fn read_sector_to_vec(&self, sector: u32) -> Vec<u8> {
         let mut output = vec![0u8; 512];
-        self.read_sector_to_slice(&mut output, sector);
+        unsafe { self.read_sector_to_slice(&mut output, sector); }
         output
     }
 
@@ -132,27 +134,29 @@ impl AtaDrive {
             _ => unreachable!()
         };
 
-        Port::new(self.io + ATA_REG_HDDEVSEL).write(cmd | (lba >> 24 & 0x0F) as u8);
-        Port::new(self.io + 1).write(0u8);
+        unsafe {
+            Port::new(self.io + ATA_REG_HDDEVSEL).write(cmd | (lba >> 24 & 0x0F) as u8);
+            Port::new(self.io + 1).write(0u8);
 
-        // Single sector write
-        Port::new(self.io + ATA_REG_SECCOUNT0).write(1u8);
+            // Single sector write
+            Port::new(self.io + ATA_REG_SECCOUNT0).write(1u8);
 
-        // Select LBA
-        Port::new(self.io + ATA_REG_LBA0).write((lba & 0xFF) as u8);
-        Port::new(self.io + ATA_REG_LBA1).write(((lba >> 8) & 0xFF) as u8);
-        Port::new(self.io + ATA_REG_LBA2).write(((lba >> 16) & 0xFF) as u8);
+            // Select LBA
+            Port::new(self.io + ATA_REG_LBA0).write((lba & 0xFF) as u8);
+            Port::new(self.io + ATA_REG_LBA1).write(((lba >> 8) & 0xFF) as u8);
+            Port::new(self.io + ATA_REG_LBA2).write(((lba >> 16) & 0xFF) as u8);
 
-        // Select write command
-        Port::new(self.io + ATA_REG_COMMAND).write(ATA_CMD_WRITE_PIO);
+            // Select write command
+            Port::new(self.io + ATA_REG_COMMAND).write(ATA_CMD_WRITE_PIO);
 
-        // Wait until ready
-        self.poll();
+            // Wait until ready
+            self.poll();
+        }
 
         let mut port = Port::<u16>::new(self.io + ATA_REG_DATA);
         for i in 0..256 {
             let double = (data[i*2] as u16) | ((data[i*2+1] as u16) << 8);
-            port.write(double);
+            unsafe { port.write(double); }
         }
         ide_400ns_delay();
     }
@@ -162,21 +166,23 @@ impl AtaDrive {
 
         let mut altstatus_port = Port::<u8>::new(self.io + ATA_REG_ALTSTATUS);
         let mut status_port = Port::<u8>::new(self.io + ATA_REG_STATUS);
-        for _ in 0..4 {
-            altstatus_port.read();
-        }
-        // wait for BSY to clear
-        while status_port.read() & ATA_SR_BSY != 0 {}
-
-        let mut status = status_port.read();
-        while status & ATA_SR_DRQ == 0 {
-            status = status_port.read();
-
-            if status & ATA_SR_ERR != 0 {
-                panic!("ERR set in ide_poll(): {:08b}", self.check_error());
+        unsafe {
+            for _ in 0..4 {
+                altstatus_port.read();
             }
+            // wait for BSY to clear
+            while status_port.read() & ATA_SR_BSY != 0 {}
+
+            let mut status = status_port.read();
+            while status & ATA_SR_DRQ == 0 {
+                status = status_port.read();
+
+                if status & ATA_SR_ERR != 0 {
+                    panic!("ERR set in ide_poll(): {:08b}", self.check_error());
+                }
+            }
+            // DRQ set, ready for PIO
         }
-        // DRQ set, ready for PIO
     }
 
     pub fn select(&self) {
@@ -184,7 +190,8 @@ impl AtaDrive {
     }
 
     pub unsafe fn check_error(&self) -> u8 {
-        Port::new(self.io + ATA_REG_ERROR).read()
+        let mut port = Port::new(self.io + ATA_REG_ERROR);
+        unsafe { port.read() }
     }
 
     // Associated functions ////////////////////////////////////////////////////
@@ -683,7 +690,7 @@ unsafe fn ide_select_drive(bus: u8, drive_num: u8) {
         ATA_SLAVE => 0xB0,
         _ => panic!("Invalid IDE drive number: {}", drive_num)
     };
-    Port::new(port).write(value);
+    unsafe { Port::new(port).write(value); }
 }
 
 fn ide_primary_irq() {
@@ -695,7 +702,7 @@ fn ide_secondary_irq() {
 }
 
 pub unsafe fn ide_identify(bus: u8, drive: u8) -> Option<AtaIdentifyData> {
-    ide_select_drive(bus, drive);
+    unsafe { ide_select_drive(bus, drive); }
 
     let io = match bus {
         ATA_PRIMARY => ATA_PRIMARY_IO,
@@ -703,35 +710,39 @@ pub unsafe fn ide_identify(bus: u8, drive: u8) -> Option<AtaIdentifyData> {
         _ => panic!("Invalid IDE bus id: {}", bus)
     };
 
-    // These registers must be zero for IDENTIFY
-    Port::new(io + ATA_REG_SECCOUNT0).write(0u8);
-    Port::new(io + ATA_REG_LBA0).write(0u8);
-    Port::new(io + ATA_REG_LBA1).write(0u8);
-    Port::new(io + ATA_REG_LBA2).write(0u8);
+    unsafe {
+        // These registers must be zero for IDENTIFY
+        Port::new(io + ATA_REG_SECCOUNT0).write(0u8);
+        Port::new(io + ATA_REG_LBA0).write(0u8);
+        Port::new(io + ATA_REG_LBA1).write(0u8);
+        Port::new(io + ATA_REG_LBA2).write(0u8);
 
-    // Send IDENTIFY command
-    Port::new(io + ATA_REG_COMMAND).write(ATA_CMD_IDENTIFY);
+        // Send IDENTIFY command
+        Port::new(io + ATA_REG_COMMAND).write(ATA_CMD_IDENTIFY);
+    }
 
     // Read status register
-    let status: u8 = Port::new(io + ATA_REG_STATUS).read();
+    let status: u8 = unsafe { Port::new(io + ATA_REG_STATUS).read() };
     if status != 0 {
         // Wait until BSY is clear
-        while (Port::<u8>::new(io + ATA_REG_STATUS).read() & ATA_SR_BSY) != 0 {}
+        unsafe {
+            while (Port::<u8>::new(io + ATA_REG_STATUS).read() & ATA_SR_BSY) != 0 {}
 
-        let mut status: u8 = Port::new(io + ATA_REG_STATUS).read();
-        while status & ATA_SR_DRQ == 0 {
-            if status & ATA_SR_ERR != 0 {
-                return None;
+            let mut status: u8 = Port::new(io + ATA_REG_STATUS).read();
+            while status & ATA_SR_DRQ == 0 {
+                if status & ATA_SR_ERR != 0 {
+                    return None;
+                }
+                status = Port::new(io + ATA_REG_STATUS).read();
             }
-            status = Port::new(io + ATA_REG_STATUS).read();
         }
 
         let mut buf = [0u16; 256];
         // Read the response (256 x u16)
         for i in 0..256 {
-            buf[i] = Port::<u16>::new(io + ATA_REG_DATA).read();
+            buf[i] = unsafe { Port::<u16>::new(io + ATA_REG_DATA).read() };
         }
-        let result = (*(&buf as *const u16 as *const AtaIdentifyData)).clone();
+        let result = unsafe { (*(&buf as *const u16 as *const AtaIdentifyData)).clone() };
         return Some(result);
     }
     else {

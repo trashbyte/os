@@ -36,6 +36,7 @@ pub enum HbaPortInterruptType {
     ColdPortDetect = 31,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct HbaPortTaskFileData {
     pub error_register: u8,
     pub busy: bool,
@@ -59,7 +60,7 @@ impl HbaPortTaskFileData {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct HbaPort {
     pub port_num: u32,
     pub port_mem_base_addr: PhysAddr,
@@ -87,10 +88,12 @@ impl HbaPort {
         let fis_base_addr_lower = self_base_virt + 8;
         let fis_base_addr_upper = self_base_virt + 12;
 
-        ptr::write_volatile(cmd_list_addr_lower as *mut u32, (cmd_list_addr.as_u64() & 0xFFFFFFFF) as u32);
-        ptr::write_volatile(cmd_list_addr_upper as *mut u32, ((cmd_list_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32);
-        ptr::write_volatile(fis_base_addr_lower as *mut u32, (fis_base_addr.as_u64() & 0xFFFFFFFF) as u32);
-        ptr::write_volatile(fis_base_addr_upper as *mut u32, ((fis_base_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32);
+        unsafe {
+            ptr::write_volatile(cmd_list_addr_lower as *mut u32, (cmd_list_addr.as_u64() & 0xFFFFFFFF) as u32);
+            ptr::write_volatile(cmd_list_addr_upper as *mut u32, ((cmd_list_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32);
+            ptr::write_volatile(fis_base_addr_lower as *mut u32, (fis_base_addr.as_u64() & 0xFFFFFFFF) as u32);
+            ptr::write_volatile(fis_base_addr_upper as *mut u32, ((fis_base_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32);
+        }
 
         Self {
             port_num, port_mem_base_addr, working_mem_base_addr, cmd_list_addr, fis_base_addr,
@@ -101,7 +104,7 @@ impl HbaPort {
     /// Find a free command list slot
     pub unsafe fn find_command_slot(&self) -> Option<u32> {
         // If not set in SACT and CI, the slot is free
-        let mut slots = self.read_sata_control() | self.read_command_issue();
+        let mut slots = unsafe { self.read_sata_control() | self.read_command_issue() };
         for i in 0..32 {
             if (slots & 1) == 0 {
                 return Some(i);
@@ -125,43 +128,47 @@ impl HbaPort {
             }
         };
         // Zero out command table memory
-        let command_table_mem = &mut *((cmd_table_addr.as_u64() + PHYS_MEM_OFFSET) as *mut [u8; COMMAND_TABLE_SIZE as usize]);
+        let command_table_mem = unsafe { &mut *((cmd_table_addr.as_u64() + PHYS_MEM_OFFSET) as *mut [u8; COMMAND_TABLE_SIZE as usize]) };
         for i in 0..COMMAND_TABLE_SIZE {
             command_table_mem[i as usize] = 0;
         }
 
         // The below loop waits until the port is no longer busy before issuing a new command
-        let mut tfd = self.task_file_data();
+        let mut tfd = unsafe { self.task_file_data() };
         while (tfd.busy || tfd.drq) && spin < (1<<31) {
             spin += 1;
-            tfd = self.task_file_data();
+            tfd = unsafe { self.task_file_data() };
         }
         if spin == (1<<31) {
             panic!("Port is hung");
         }
 
-        // write command table and header
-        command.write_to_addr(VirtAddr::new(cmd_table_addr.as_u64() + PHYS_MEM_OFFSET));
-        header.write_to_addr(VirtAddr::new(
-            command_header_addr(self.working_mem_base_addr, self.port_num, slot).as_u64()
-                + PHYS_MEM_OFFSET
-        ));
+        unsafe {
+            // write command table and header
+            command.write_to_addr(VirtAddr::new(cmd_table_addr.as_u64() + PHYS_MEM_OFFSET));
+            header.write_to_addr(VirtAddr::new(
+                command_header_addr(self.working_mem_base_addr, self.port_num, slot).as_u64()
+                    + PHYS_MEM_OFFSET
+            ));
 
-        self.set_command_issue_bit(slot as u8, true);
+            self.set_command_issue_bit(slot as u8, true);
+        }
 
         // Wait for completion
         loop {
             // In some longer duration reads, it may be helpful to spin on the DPS bit
             // in the PxIS port field as well (1 << 5)
-            if !self.get_command_issue_bit(slot as u8) { break; }
+            unsafe {
+                if !self.get_command_issue_bit(slot as u8) { break; }
 
-            if self.interrupt_status(HbaPortInterruptType::TaskFileError) {
-                panic!("Read disk error\n");
+                if self.interrupt_status(HbaPortInterruptType::TaskFileError) {
+                    panic!("Read disk error\n");
+                }
             }
         }
 
         // Check again
-        if self.interrupt_status(HbaPortInterruptType::TaskFileError) {
+        if unsafe { self.interrupt_status(HbaPortInterruptType::TaskFileError) } {
             panic!("Read disk error");
         }
     }
@@ -169,52 +176,52 @@ impl HbaPort {
     /// Read the value of the Interrupt Status register for this port
     pub unsafe fn interrupt_status_register(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x10 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Retrieve the status of the given interrupt type from this port.
     /// `true` means the interrupt is enabled.
     pub unsafe fn interrupt_status(&self, int: HbaPortInterruptType) -> bool {
-        let reg = self.interrupt_status_register();
+        let reg = unsafe { self.interrupt_status_register() };
         ((reg >> int as u32) & 1) != 0
     }
     /// Read the value of the Interrupt Enable register for this port
     pub unsafe fn interrupt_enable_register(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x14 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Enable the given interrupt type on this port.
     pub unsafe fn enable_interrupt(&self, int: HbaPortInterruptType) {
-        let reg = self.interrupt_enable_register();
+        let reg = unsafe { self.interrupt_enable_register() };
         let addr = self.port_mem_base_addr.as_u64() + 0x14 + PHYS_MEM_OFFSET;
-        ptr::write_volatile(addr as *mut u32, reg | (1 << int as u32));
+        unsafe { ptr::write_volatile(addr as *mut u32, reg | (1 << int as u32)) };
     }
     /// Disable the given interrupt type on this port.
     pub unsafe fn disable_interrupt(&self, int: HbaPortInterruptType) {
-        let reg = self.interrupt_enable_register();
+        let reg = unsafe { self.interrupt_enable_register() };
         let addr = self.port_mem_base_addr.as_u64() + 0x14 + PHYS_MEM_OFFSET;
-        ptr::write_volatile( addr as *mut u32, reg & (!(1 << int as u32)) );
+        unsafe { ptr::write_volatile( addr as *mut u32, reg & (!(1 << int as u32)) ) };
     }
     /// Read the value of the Command/Status register for this port
     pub unsafe fn command_and_status(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x18 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Write a value to the Command/Status register for this port
     pub unsafe fn set_command_and_status(&self, new_val: u32) {
         let addr = self.port_mem_base_addr.as_u64() + 0x18 + PHYS_MEM_OFFSET;
-        ptr::write_volatile(addr as *mut u32, new_val);
+        unsafe { ptr::write_volatile(addr as *mut u32, new_val); }
     }
     /// Read the value of the Task File Data register for this port
     pub unsafe fn task_file_data(&self) -> HbaPortTaskFileData {
         let addr = self.port_mem_base_addr.as_u64() + 0x20 + PHYS_MEM_OFFSET;
-        let reg = ptr::read_volatile(addr as *const u32);
+        let reg = unsafe { ptr::read_volatile(addr as *const u32) };
         HbaPortTaskFileData::from_u32(reg)
     }
     /// Get the signature of the device attached to this port from the Signature register.
     /// `None` indicates an invalid signature.
     pub unsafe fn signature(&self) -> Option<SataSignature> {
         let addr = self.port_mem_base_addr.as_u64() + 0x24 + PHYS_MEM_OFFSET;
-        let reg = ptr::read_volatile(addr as *const u32);
+        let reg = unsafe { ptr::read_volatile(addr as *const u32) };
         match reg {
             0x00000101 => Some(SataSignature::ATA),
             0xEB140101 => Some(SataSignature::ATAPI),
@@ -226,60 +233,60 @@ impl HbaPort {
     /// Read the value of the SATA Status register for this port
     pub unsafe fn sata_status(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x28 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Read the value of the SATA Control register for this port
     pub unsafe fn read_sata_control(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x2C + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Write a value to the SATA Control register for this port
     pub unsafe fn write_sata_control(&self, value: u32) {
         let addr = self.port_mem_base_addr.as_u64() + 0x2C + PHYS_MEM_OFFSET;
-        ptr::write_volatile(addr as *mut u32, value);
+        unsafe { ptr::write_volatile(addr as *mut u32, value); }
     }
     /// Read the value of the SATA Error register for this port
     pub unsafe fn sata_error(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x30 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Read the value of the SATA Active register for this port
     pub unsafe fn read_sata_active(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x34 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Get the status of the given bit in the SATA Active register
     pub unsafe fn get_sata_active_bit(&self, bit: u8) -> bool {
-        let reg = self.read_sata_active();
+        let reg = unsafe { self.read_sata_active() };
         ((reg >> bit as u32) & 1) != 0
     }
     /// Set the status of the given bit in the SATA Active register
     pub unsafe fn set_sata_active(&self, bit: u8, value: bool) {
         // retrieve all bits except the one we wish to set
-        let reg = self.read_sata_active() & (!(1 << bit as u32));
+        let reg = unsafe { self.read_sata_active() & (!(1 << bit as u32)) };
         let new_val = reg | (match value { true => (1 << bit as u32), false => 0 });
         let addr = self.port_mem_base_addr.as_u64() + 0x34 + PHYS_MEM_OFFSET;
-        ptr::write_volatile(addr as *mut u32, new_val);
+        unsafe { ptr::write_volatile(addr as *mut u32, new_val) };
     }
     pub unsafe fn read_command_issue(&self) -> u32 {
         let addr = self.port_mem_base_addr.as_u64() + 0x38 + PHYS_MEM_OFFSET;
-        ptr::read_volatile(addr as *const u32)
+        unsafe { ptr::read_volatile(addr as *const u32) }
     }
     /// Get the status of the given bit in the Command Issue register
     pub unsafe fn get_command_issue_bit(&self, bit: u8) -> bool {
-        let reg = self.read_command_issue();
+        let reg = unsafe { self.read_command_issue() };
         ((reg >> bit as u32) & 1) != 0
     }
     /// Set the status of the given bit in the Command Issue register
     pub unsafe fn set_command_issue_bit(&self, bit: u8, value: bool) {
         // retrieve all bits except the one we wish to set
-        let reg = self.read_command_issue() & (!(1 << bit as u32));
+        let reg = unsafe { self.read_command_issue() & (!(1 << bit as u32)) };
         let new_val = reg | (match value { true => (1 << bit as u32), false => 0 });
         let addr = self.port_mem_base_addr.as_u64() + 0x38 + PHYS_MEM_OFFSET;
-        ptr::write_volatile(addr as *mut u32, new_val);
+        unsafe { ptr::write_volatile(addr as *mut u32, new_val); }
     }
     pub unsafe fn power_state(&self) -> HbaPortPowerState {
-        match ((self.sata_status() >> 8) & 0x0F) as u8 {
+        match ((unsafe { self.sata_status() } >> 8) & 0x0F) as u8 {
             0 => HbaPortPowerState::Unknown,
             1 => HbaPortPowerState::Active,
             2 => HbaPortPowerState::PartialPowerManagement,
@@ -289,7 +296,7 @@ impl HbaPort {
         }
     }
     pub unsafe fn device_detect(&self) -> HbaPortDeviceDetectState {
-        match (self.sata_status() & 0x0F) as u8 {
+        match (unsafe { self.sata_status() } & 0x0F) as u8 {
             0 => HbaPortDeviceDetectState::Unknown,
             1 => HbaPortDeviceDetectState::PresentNoComm,
             3 => HbaPortDeviceDetectState::PresentWithComm,

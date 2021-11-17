@@ -9,6 +9,7 @@
 use crate::path::Path;
 use core::ops::Range;
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 pub mod ahci;
 pub mod ata;

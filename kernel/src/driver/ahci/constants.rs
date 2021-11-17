@@ -89,6 +89,7 @@ pub const HBA_PORT_SPD_GEN1:    u8 = 1;
 pub const HBA_PORT_SPD_GEN2:    u8 = 2;
 pub const HBA_PORT_SPD_GEN3:    u8 = 3;
 
+#[derive(Clone, Copy, Debug)]
 pub enum AhciGlobalHostControlBit {
     AhciEnable      = (1 << 31),
     InterruptEnable = (1 << 1),

@@ -43,7 +43,7 @@ pub unsafe fn decode_ptr(chars: *const u8, len: usize, policy: Option<InvalidCha
     let mut result = String::new();
     for i in 0..len {
         let addr = chars as u64 + i as u64;
-        match decode_char(CharacterType::SingleByte(*(addr as *const u8)), &policy) {
+        match decode_char(CharacterType::SingleByte(unsafe { *(addr as *const u8) }), &policy) {
             EncodingResult::Ok(c) => result.push(c),
             EncodingResult::Err(e) => return Err(e),
             EncodingResult::Ignore => {} // do nothing

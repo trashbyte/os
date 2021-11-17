@@ -15,6 +15,7 @@ pub enum BlockDeviceError {
 
 }
 
+#[derive(Debug)]
 pub enum BlockDeviceMedia {
     Partition(Partition)
 }
@@ -22,7 +23,7 @@ pub enum BlockDeviceMedia {
 pub const BLOCK_SIZE: usize = 4096;
 pub type Block = [u8; BLOCK_SIZE];
 
-
+#[derive(Debug)]
 pub struct BlockDevice {
     pub media: BlockDeviceMedia,
 }

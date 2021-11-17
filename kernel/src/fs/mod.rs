@@ -9,6 +9,7 @@ use crate::path::Path;
 use alloc::vec::Vec;
 use alloc::string::String;
 use crate::fs::ext2::FsHandle;
+use core::fmt::Debug;
 
 pub mod fat32;
 pub mod ext2;
@@ -46,6 +47,7 @@ impl From<BlockDeviceError> for FsError {
     }
 }
 
+#[derive(Debug)]
 pub struct FilesystemStatic;
 impl FilesystemStatic {
     pub fn mount() -> FsResult<FsHandle> { Ok(0) }
@@ -53,7 +55,7 @@ impl FilesystemStatic {
 }
 
 /// Generic filesystem interface
-pub trait Filesystem {
+pub trait Filesystem: Send + Sync + Debug {
     fn list_directory(&self, path: &Path) -> FsResult<Vec<VfsDirectoryEntry>>;
 }
 #[derive(Debug, Clone)]

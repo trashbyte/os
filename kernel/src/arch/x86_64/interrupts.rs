@@ -5,17 +5,15 @@
 ///////////////////////////////////////////////////////////////////////////////L
 
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use spin;
 use conquer_once::spin::OnceCell;
-use crate::{print, both_println, PHYS_MEM_OFFSET};
-use crate::util::halt_loop;
 use x86_64::instructions::port::Port;
-use pc_keyboard::{KeyCode, KeyState, HandleControl};
 use pic8259::ChainedPics;
 use x2apic::lapic::{LocalApic, LocalApicBuilder};
 use x2apic::ioapic::{IoApic, IrqFlags};
 use acpi_crate::InterruptModel;
 use crate::acpi::ACPI_TABLES;
+use crate::{both_println, PHYS_MEM_OFFSET};
+use crate::util::halt_loop;
 
 
 pub const PIC_1_OFFSET: u8 = 32;
@@ -61,7 +59,6 @@ impl InterruptIndex {
 }
 
 pub fn early_init_interrupts() {
-    crate::serial_println!("Initializing IDT");
     IDT.try_init_once(|| {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
@@ -144,7 +141,6 @@ pub fn late_init_interrupts() {
         crate::both_println!(" No APIC found. Using PICs as fallback.");
     }
 
-    crate::both_println!("Enabling interrupts");
     x86_64::instructions::interrupts::enable();
 }
 
@@ -265,7 +261,7 @@ extern "x86-interrupt" fn overflow_handler(frame: InterruptStackFrame) {
 extern "x86-interrupt" fn disk_irq_handler(_frame: InterruptStackFrame) {
     both_println!("disk irq");
 
-    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+    match LOCAL_APIC.lock().as_mut() {
         Some(apic) => unsafe { apic.end_of_interrupt() },
         None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
     }
@@ -282,66 +278,18 @@ extern "x86-interrupt" fn timer_interrupt_handler(_frame: InterruptStackFrame) {
         // }
     }
 
-    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+    match LOCAL_APIC.lock().as_mut() {
         Some(apic) => unsafe { apic.end_of_interrupt() },
         None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
     }
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_frame: InterruptStackFrame) {
-    use pc_keyboard::{Keyboard, ScancodeSet1, DecodedKey, layouts};
-    use spin::Mutex;
-
-    static KEYBOARD: OnceCell<Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> = OnceCell::uninit();
-
-    match KEYBOARD.try_init_once(||
-        Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::MapLettersToUnicode))
-    ) {
-        Ok(_) => {},
-        Err(conquer_once::TryInitError::AlreadyInit) => {},
-        Err(e) => panic!("Couldn't initialize keyboard: {:?}", e)
-    }
-
-    let kb_cell = KEYBOARD.get().expect("Keyboard isn't initialized.");
-    let mut keyboard = kb_cell.lock();
     let mut port = Port::new(0x60);
-
     let scancode: u8 = unsafe { port.read() };
-    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event.clone()) {
-            drop(keyboard);
-            match key {
-                DecodedKey::Unicode(character) => {
-                    if character == '\x08' {
-                        // true if a character was erased (so we can't go past the start of the string)
-                        if (*crate::shell::SHELL.lock()).backspace() {
-                            crate::vga_buffer::_backspace();
-                        }
-                    }
-                    else {
-                        print!("{}", character);
-                        if character == '\n' {
-                            (*crate::shell::SHELL.lock()).submit();
-                        }
-                        else {
-                            (*crate::shell::SHELL.lock()).add_char(character);
-                        }
-                    }
-                },
-                DecodedKey::RawKey(key) => {
-                    if key_event.state == KeyState::Down {
-                        match key {
-                            KeyCode::PageUp => (*crate::vga_buffer::TERMINAL.lock()).scroll(true),
-                            KeyCode::PageDown => (*crate::vga_buffer::TERMINAL.lock()).scroll(false),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
+    crate::task::keyboard::add_scancode(scancode);
 
-    match crate::arch::interrupts::LOCAL_APIC.lock().as_mut() {
+    match LOCAL_APIC.lock().as_mut() {
         Some(apic) => unsafe { apic.end_of_interrupt() },
         None => unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
     }

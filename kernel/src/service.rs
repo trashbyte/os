@@ -11,10 +11,11 @@ use crate::fs::ext2::Ext2Filesystem;
 use alloc::sync::Arc;
 
 
-pub static mut DISK_SERVICE: Option<Mutex<DiskService>> = None;
+pub static DISK_SERVICE: Mutex<Option<DiskService>> = Mutex::new(None);
 //pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
 
 
+#[derive(Debug)]
 pub struct DiskService {
     drives: HashMap<u32, Arc<AtaDrive>, ahash::RandomState>,
     next_id: u32,
@@ -44,11 +45,12 @@ impl DiskService {
             Some(dt) => Some(dt.clone())
         }
     }
-    pub fn iter(&self) -> hashbrown::hash_map::Iter<u32, Arc<AtaDrive>> {
+    pub fn iter(&self) -> hashbrown::hash_map::Iter<'_, u32, Arc<AtaDrive>> {
         self.drives.iter()
     }
 }
 
+#[derive(Debug)]
 pub enum FsType {
     Ext2(Ext2Filesystem)
 }

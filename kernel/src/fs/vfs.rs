@@ -12,8 +12,9 @@ use spin::Mutex;
 use alloc::sync::Arc;
 
 
-pub static mut GLOBAL_VFS: Option<Mutex<VFS>> = None;
+pub static mut GLOBAL_VFS: Mutex<Option<VFS>> = Mutex::new(None);
 
+#[derive(Debug)]
 pub struct VFS {
     mounts: HashMap<Path, Arc<dyn Filesystem>, ahash::RandomState>,
     //root_node: VfsNode,

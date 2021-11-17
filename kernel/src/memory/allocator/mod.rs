@@ -8,18 +8,20 @@ use x86_64::{
     structures::paging::{mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB},
     VirtAddr,
 };
+use core::fmt::Debug;
 
 
 pub mod fixed_size_block;
 
 
 /// A wrapper around spin::Mutex to permit trait implementations.
-pub struct Locked<A> {
+#[derive(Debug)]
+pub struct Locked<A: Debug> {
     inner: spin::Mutex<A>,
 }
-impl<A> Locked<A> {
+impl<A: Debug> Locked<A> {
     pub const fn new(inner: A) -> Self { Locked { inner: spin::Mutex::new(inner) } }
-    pub fn lock(&self) -> spin::MutexGuard<A> { self.inner.lock() }
+    pub fn lock(&self) -> spin::MutexGuard<'_, A> { self.inner.lock() }
 }
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;

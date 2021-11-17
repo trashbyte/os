@@ -3,4 +3,5 @@
 members = [
     "kernel-utils",
     "kernel",
+    "main"
 ]

@@ -15,13 +15,15 @@ const BLANK_CHAR: ScreenChar = ScreenChar {
     color_code: ColorCode(0)
 };
 
+const SCROLLBACK_LINES: usize = 1000;
+
 lazy_static! {
     pub static ref TERMINAL: Mutex<Terminal> = Mutex::new(Terminal {
-        cursor_col: 0,
-        cursor_row: 0,
+        cursor_x: 0,
+        cursor_y: 0,
         scroll_row: 0,
         color_code: ColorCode::new(Color::White, Color::Black),
-        scrollback: [[BLANK_CHAR; SCREEN_WIDTH]; 1000],
+        scrollback: [[BLANK_CHAR; SCREEN_WIDTH]; SCROLLBACK_LINES],
         screen_buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
@@ -53,7 +55,7 @@ macro_rules! both_println {
 }
 
 #[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
 
     interrupts::without_interrupts(|| {
@@ -114,16 +116,18 @@ const SCREEN_HEIGHT: usize = 25;
 const SCREEN_WIDTH: usize = 80;
 
 #[repr(transparent)]
+#[derive(Debug)]
 struct Buffer {
     chars: [[Volatile<ScreenChar>; SCREEN_WIDTH]; SCREEN_HEIGHT]
 }
 
+#[derive(Debug)]
 pub struct Terminal {
-    /// Cursor column
-    cursor_col: usize,
-    /// Absolute cursor index in scrollback
-    cursor_row: usize,
-    /// Absolute index of scrollback item for the first line of the screen
+    /// Cursor column in screen space (0..SCREEN_WIDTH)
+    cursor_x: usize,
+    /// Cursor row in screen space (0..SCREEN_HEIGHT)
+    cursor_y: usize,
+    /// Index of scrollback entry for the first line of the screen
     scroll_row: usize,
     /// Current color code for new chars
     color_code: ColorCode,
@@ -143,18 +147,22 @@ impl Terminal {
                     ascii_character: byte,
                     color_code: self.color_code,
                 };
-                self.scrollback[self.cursor_row][self.cursor_col] = c;
-                self.cursor_col += 1;
-                if self.cursor_col >= SCREEN_WIDTH {
+                self.set_char_at_cursor(c);
+
+                if self.cursor_x == SCREEN_WIDTH-1 {
                     self.new_line();
                 }
                 else {
-                    // only draw new char unless we need to scroll
-                    self.screen_buffer.chars[self.cursor_row.min(SCREEN_HEIGHT-1)][self.cursor_col-1].write(c);
+                    self.set_cursor_x(self.cursor_x + 1);
                 }
             }
         }
         self.scroll_to_bottom();
+    }
+
+    fn set_char_at_cursor(&mut self, c: ScreenChar) {
+        self.scrollback[self.cursor_y + self.scroll_row][self.cursor_x] = c;
+        self.screen_buffer.chars[self.cursor_y][self.cursor_x].write(c);
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -166,37 +174,40 @@ impl Terminal {
                 _ => self.write_byte(0xfe),
             }
         }
-        //self.set_cursor_pos(self.cursor_col as u8, self.cursor_row as u8 - self.scroll_row as u8);
     }
 
     fn refresh(&mut self) {
-        let first_row_to_draw = self.scroll_row;
-        let last_row_to_draw = (self.scroll_row + SCREEN_HEIGHT - 1).min(self.cursor_row);
-        let mut write_row = 0;
-        for y in first_row_to_draw..=last_row_to_draw {
+        for y in 0..SCREEN_HEIGHT {
             for x in 0..SCREEN_WIDTH {
-                let character = self.scrollback[y][x];
-                self.screen_buffer.chars[write_row][x].write(character);
+                let character = self.scrollback[y + self.scroll_row][x];
+                self.screen_buffer.chars[y][x].write(character);
             }
-            write_row += 1;
         }
     }
 
-    #[allow(dead_code)]
-    fn cursor_pos(&self) -> (u8, u8) {
-        unsafe {
-            let mut port1 = Port::<u8>::new(0x3D4);
-            let mut port2 = Port::<u8>::new(0x3D5);
-            port1.write(0x0F);
-            let x = port2.read();
-            port1.write(0x0E);
-            let y = port2.read();
-            (x, y)
-        }
+    pub fn set_color(&mut self, fg: Color, bg: Color) {
+        self.color_code = ColorCode::new(fg, bg);
     }
 
-    #[allow(dead_code)]
-    fn set_cursor_pos(&self, x: u8, y: u8) {
+    pub fn cursor_x(&self) -> usize {
+        self.cursor_x
+    }
+
+    pub fn set_cursor_x(&mut self, value: usize) {
+        self.cursor_x = value % SCREEN_WIDTH;
+        self.set_vga_cursor_pos(self.cursor_x as u8, self.cursor_y as u8);
+    }
+
+    pub fn cursor_y(&self) -> usize {
+        self.cursor_y
+    }
+
+    pub fn set_cursor_y(&mut self, value: usize) {
+        self.cursor_y = value % SCREEN_HEIGHT;
+        self.set_vga_cursor_pos(self.cursor_x as u8, self.cursor_y as u8);
+    }
+
+    fn set_vga_cursor_pos(&self, x: u8, y: u8) {
         let pos = y as u16 * 80 + x as u16;
         unsafe {
             let mut port1 = Port::<u8>::new(0x3D4);
@@ -209,22 +220,20 @@ impl Terminal {
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor_col > 0 {
-            self.cursor_col -= 1;
-
-            self.scrollback[self.cursor_row][self.cursor_col] = BLANK_CHAR;
-            self.screen_buffer.chars[self.cursor_row.min(SCREEN_HEIGHT-1)][self.cursor_col].write(BLANK_CHAR);
+        if self.cursor_x > 0 {
+            self.set_cursor_x(self.cursor_x - 1);
+            self.set_char_at_cursor(BLANK_CHAR);
         }
-        else if self.cursor_row > 0 { // wrap
-            self.cursor_col = SCREEN_WIDTH-1;
-            self.cursor_row -= 1;
-
-            self.scrollback[self.cursor_row][self.cursor_col] = BLANK_CHAR;
-            self.screen_buffer.chars[self.cursor_row.min(SCREEN_HEIGHT-1)][self.cursor_col].write(BLANK_CHAR);
+        else if self.cursor_y > 0 {
+            // backspace at first column, wrap to prev line
+            self.set_cursor_x(SCREEN_WIDTH - 1);
+            self.set_cursor_y(self.cursor_y - 1);
+            self.set_char_at_cursor(BLANK_CHAR);
         }
         // else, we're trying to wrap around at the first line, do nothing
     }
 
+    // TODO: scrolling up and then typing input breaks scrollback
     pub fn scroll(&mut self, up: bool) {
         if up {
             if self.scroll_row > 0 {
@@ -232,7 +241,7 @@ impl Terminal {
             }
         }
         else {
-            if self.cursor_row >= SCREEN_HEIGHT && self.scroll_row < self.cursor_row - SCREEN_HEIGHT + 1 {
+            if self.scroll_row < SCROLLBACK_LINES-1 {
                 self.scroll_row += 1;
             }
         }
@@ -240,21 +249,23 @@ impl Terminal {
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        if self.cursor_row - self.scroll_row >= SCREEN_HEIGHT {
-            self.scroll_row = self.cursor_row - SCREEN_HEIGHT + 1;
+        if self.cursor_y + self.scroll_row >= SCREEN_HEIGHT {
+            self.scroll_row = (self.cursor_y + self.scroll_row) - SCREEN_HEIGHT + 1;
             self.refresh();
         }
     }
 
     fn new_line(&mut self) {
-        self.cursor_row += 1;
-        if self.cursor_row >= 1000 { panic!("oops i havent handled scrollback overflow yet"); }
-        self.cursor_col = 0;
-
-        if self.cursor_row - self.scroll_row >= SCREEN_HEIGHT {
+        if self.cursor_y >= SCREEN_HEIGHT-1 {
+            self.set_cursor_y(SCREEN_HEIGHT-1);
             self.scroll_row += 1;
+            if self.scroll_row >= 1000 - SCREEN_WIDTH { panic!("oops i havent handled scrollback overflow yet"); }
+        }
+        else {
+            self.set_cursor_y(self.cursor_y + 1);
         }
 
+        self.set_cursor_x(0);
         self.refresh();
     }
 }

@@ -5,6 +5,7 @@
 ///////////////////////////////////////////////////////////////////////////////L
 
 #[repr(C)]
+#[derive(Debug, Clone)]
 pub struct FAT32BootSector {
     boot_jmp: [u8; 3],
     oem_name: [u8; 8],

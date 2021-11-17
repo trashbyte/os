@@ -20,6 +20,7 @@ lazy_static! {
     });
 }
 
+#[derive(Debug)]
 pub struct Shell {
     command_str: String,
     working_directory: Path,

@@ -28,6 +28,7 @@ pub enum FisType {
     SetDeviceBits        = 0xA1, // Set device bits FIS - device to host
 }
 
+#[derive(Debug)]
 pub enum Fis {
     FisRegisterHostToDevice(FisRegisterHostToDevice),
     //FisRegisterDeviceToHost(FisRegisterDeviceToHost),
@@ -53,6 +54,7 @@ impl Fis {
     }
 }
 
+#[derive(Debug)]
 pub struct FisRegisterHostToDevice {
     pub port_mult_port: u8,
     pub is_from_command: bool,

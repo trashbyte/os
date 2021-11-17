@@ -8,7 +8,7 @@
 
 use alloc::string::{String, ToString};
 use core::ops::Div;
-use core::iter::{Iterator};
+use core::iter::Iterator;
 use core::fmt::{Display, Formatter, Error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -27,7 +27,7 @@ impl Path {
     }
 
     /// Accumulating iter, e.g. / -> /foo -> /foo/bar
-    pub fn iter_accum(&self) -> PathAccumIter {
+    pub fn iter_accum(&self) -> PathAccumIter<'_> {
         PathAccumIter::new(self)
     }
 
@@ -141,6 +141,7 @@ impl Display for Path {
     }
 }
 
+#[derive(Debug)]
 pub struct PathAccumIter<'a> {
     path: &'a Path,
     accum_str: String,
@@ -155,7 +156,7 @@ impl<'a> PathAccumIter<'a> {
         }
     }
 }
-impl<'a> Iterator for PathAccumIter<'a> {
+impl Iterator for PathAccumIter<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {

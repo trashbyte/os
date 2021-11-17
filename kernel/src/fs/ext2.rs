@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 use num_traits::float::Float;
-use core::fmt::{Debug};
+use core::fmt::Debug;
 use alloc::string::String;
 use crate::encoding::InvalidCharPolicy;
 use alloc::vec::Vec;
@@ -15,7 +15,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use crate::path::Path;
 use crate::util::UUID;
-use crate::device::block::{BlockDevice};
+use crate::device::block::BlockDevice;
 use crate::fs::{FsResult, FsError, Filesystem, VfsNodeType, VfsDirectoryEntry};
 use core::iter::FromIterator;
 use alloc::sync::Arc;
@@ -73,6 +73,7 @@ pub struct Ext2JournalInfo {
 }
 
 // TODO: is there any point in using 64-bit inode/block addrs here?
+#[derive(Debug)]
 pub struct Ext2Filesystem {
     pub media: Arc<BlockDevice>,
     pub filesystem_id: UUID,
@@ -108,7 +109,7 @@ pub struct Ext2Filesystem {
 impl Ext2Filesystem {
     pub unsafe fn read_from(media: &Arc<BlockDevice>) -> FsResult<Self> {
         let buffer = media.read(0)?;
-        let header = (*(&buffer[0x400..0x454] as *const [u8] as *const SuperblockHeader)).clone();
+        let header = unsafe { (*(&buffer[0x400..0x454] as *const [u8] as *const SuperblockHeader)).clone() };
         if header.check_signature != 0xEF53 {
             return Err(FsError::NotValidFs);
         }
@@ -123,7 +124,7 @@ impl Ext2Filesystem {
         if header.version_major < 1 {
             return Err(FsError::VersionNotSupported);
         }
-        let header_ext = (*(&buffer[0x454..0x4EC] as *const [u8] as *const SuperblockHeaderExtended)).clone();
+        let header_ext = unsafe { (*(&buffer[0x454..0x4EC] as *const [u8] as *const SuperblockHeaderExtended)).clone() };
 
         let mut volume_name = String::new();
         for b in header_ext.volume_name.iter() {
@@ -227,9 +228,9 @@ impl Ext2Filesystem {
         let inode_index = inode_index % inodes_per_block as u64;
         // assuming the 4k blocks line up is lazy but whatever, its temporary
         let block = self.media.read(block_num as u64)?;
-        assert!((inode_index as u64 * self.inode_size as u64) < self.block_size as u64);
+        assert!((inode_index * self.inode_size as u64) < self.block_size as u64);
         unsafe {
-            let inode_addr = (&block as *const [u8] as *const u8 as u64) + (inode_index as u64 * self.inode_size as u64);
+            let inode_addr = (&block as *const [u8] as *const u8 as u64) + (inode_index * self.inode_size as u64);
             Ok((*(inode_addr as *const Inode)).clone())
         }
     }
@@ -341,6 +342,9 @@ impl Filesystem for Ext2Filesystem {
         Ok(result)
     }
 }
+// TODO: NOT ACTUALLY THREAD SAFE
+unsafe impl Send for Ext2Filesystem {}
+unsafe impl Sync for Ext2Filesystem {}
 
 #[derive(Debug, Clone)]
 #[repr(C)]
