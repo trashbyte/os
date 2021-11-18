@@ -17,7 +17,6 @@ use core::panic::PanicInfo;
 use bootloader::BootInfo;
 use x86_64::{VirtAddr};
 use kernel::{MemoryInitResults, both_println};
-use alloc::boxed::Box;
 use kernel::time::DateTimeError;
 use kernel::memory::AHCI_MEM_REGION;
 //use pest::Parser;
@@ -69,18 +68,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         }
     }
 
-    let mut ahci_driver = unsafe { kernel::ahci_init(&pci_infos) };
+    unsafe { kernel::ahci_init(&pci_infos) };
     let found_ahci_mem = AHCI_MEM_REGION.lock().unwrap().range;
     both_println!("AHCI memory initialized at {:x}..{:x}", found_ahci_mem.start_addr(), found_ahci_mem.end_addr());
 
-    let mut buf = Box::new([69u16; 4096]); // allocate on the heap
-    unsafe {
-       let mut port = ahci_driver.ports[0].as_mut().unwrap();
-       kernel::driver::ahci::test_read(&mut port, 0, 8, buf.as_mut_ptr()).unwrap();
-    }
-    for i in 0..64 {
-        kernel::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
-    }
    //
    //  // TODO: [HACK] there's gotta be a better way to do a wait here
    //  for _ in 0..1000000 {}

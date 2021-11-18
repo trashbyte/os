@@ -1,8 +1,10 @@
 trashbyte (trashbyte@github):
-  Most of the general coding work
+ - Most of the general coding work
 
 RedoxOS:
-  rtc.rs is based on RedoxOS's rtc.rs
+ - AHCI driver based on RedoxOS's implementation
+ - rtc.rs is based on RedoxOS's rtc.rs
 
 Philipp Oppermann (phil-opp@github):
-  The series of excellent Rust OSDev tutorials at https://os.phil-opp.com. I could never have started this project without them.
+ - The series of excellent Rust OSDev tutorials at https://os.phil-opp.com. I could never have started this project without them.
+ - linked_list_allocator crate, vendored

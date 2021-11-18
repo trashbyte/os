@@ -7,12 +7,12 @@
 #![allow(dead_code)]
 
 
-use crate::driver::ata::AtaDrive;
+//use crate::driver::ata::AtaDrive;
 
 #[derive(Debug)]
 pub enum PhysicalDeviceType {
     FloppyDrive,
-    AtaDrive(AtaDrive),
+    //AtaDrive(AtaDrive),
     SataDrive,
     NVMeDrive,
 }

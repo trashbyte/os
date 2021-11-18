@@ -3,5 +3,6 @@
 members = [
     "kernel-utils",
     "kernel",
-    "main"
+    "main",
+    "allocator",
 ]

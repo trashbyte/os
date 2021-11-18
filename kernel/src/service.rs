@@ -4,63 +4,63 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-use spin::Mutex;
-use crate::driver::ata::{AtaDrive, ide_identify};
-use hashbrown::HashMap;
-use crate::fs::ext2::Ext2Filesystem;
-use alloc::sync::Arc;
-
-
-pub static DISK_SERVICE: Mutex<Option<DiskService>> = Mutex::new(None);
-//pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
-
-
-#[derive(Debug)]
-pub struct DiskService {
-    drives: HashMap<u32, Arc<AtaDrive>, ahash::RandomState>,
-    next_id: u32,
-}
-impl DiskService {
-    pub fn new() -> Self {
-        Self {
-            drives: HashMap::default(),
-            next_id: 1,
-        }
-    }
-    pub fn init(&mut self) {
-        for bus in 0..2 {
-            for device in 0..2 {
-                unsafe {
-                    if let Some(info) = ide_identify(bus, device) {
-                        self.drives.insert(self.next_id, Arc::new(AtaDrive::from_identify(info, bus, device)));
-                        self.next_id += 1;
-                    }
-                }
-            }
-        }
-    }
-    pub fn get(&self, id: u32) -> Option<Arc<AtaDrive>> {
-        match self.drives.get(&id) {
-            None => None,
-            Some(dt) => Some(dt.clone())
-        }
-    }
-    pub fn iter(&self) -> hashbrown::hash_map::Iter<'_, u32, Arc<AtaDrive>> {
-        self.drives.iter()
-    }
-}
-
-#[derive(Debug)]
-pub enum FsType {
-    Ext2(Ext2Filesystem)
-}
-impl FsType {
-    pub fn type_as_str(&self) -> &'static str {
-        match self {
-            FsType::Ext2(_) => "Ext2"
-        }
-    }
-}
+// use spin::Mutex;
+// use crate::driver::ata::{AtaDrive, ide_identify};
+// use hashbrown::HashMap;
+// use crate::fs::ext2::Ext2Filesystem;
+// use alloc::sync::Arc;
+//
+//
+// pub static DISK_SERVICE: Mutex<Option<DiskService>> = Mutex::new(None);
+// //pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
+//
+//
+// #[derive(Debug)]
+// pub struct DiskService {
+//     drives: HashMap<u32, Arc<AtaDrive>, ahash::RandomState>,
+//     next_id: u32,
+// }
+// impl DiskService {
+//     pub fn new() -> Self {
+//         Self {
+//             drives: HashMap::default(),
+//             next_id: 1,
+//         }
+//     }
+//     pub fn init(&mut self) {
+//         for bus in 0..2 {
+//             for device in 0..2 {
+//                 unsafe {
+//                     if let Some(info) = ide_identify(bus, device) {
+//                         self.drives.insert(self.next_id, Arc::new(AtaDrive::from_identify(info, bus, device)));
+//                         self.next_id += 1;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     pub fn get(&self, id: u32) -> Option<Arc<AtaDrive>> {
+//         match self.drives.get(&id) {
+//             None => None,
+//             Some(dt) => Some(dt.clone())
+//         }
+//     }
+//     pub fn iter(&self) -> hashbrown::hash_map::Iter<'_, u32, Arc<AtaDrive>> {
+//         self.drives.iter()
+//     }
+// }
+//
+// #[derive(Debug)]
+// pub enum FsType {
+//     Ext2(Ext2Filesystem)
+// }
+// impl FsType {
+//     pub fn type_as_str(&self) -> &'static str {
+//         match self {
+//             FsType::Ext2(_) => "Ext2"
+//         }
+//     }
+// }
 //pub struct FsService {
 //    filesystems: HashMap<UUID, (u32, FsType)>,
 //}

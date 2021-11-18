@@ -4,130 +4,71 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-//! ## Limitations
-//!
-//! The AHCI specification allows for up to 65535 PRDTs in a command table. This
-//! implementation only supports a maximum of 32 PRDTs per command table.
-//! See [self::constants::NUM_PRDTS_PER_COMMAND](NUM_PRDTS_PER_COMMAND)
-
-// todo:
-// clean up remaining funcs here
-// complete all fis types
-// add atapi stuffs
-// atapi identify
-// atapi get capacity
-// atapi read
-
-#![allow(dead_code)]
-#![allow(non_upper_case_globals)]
+use self::ata::AtaDisk;
+use self::atapi::AtapiDisk;
+use self::hba::HbaMemory;
+use self::constants::HbaPortType;
+use x86_64::PhysAddr;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use crate::PHYS_MEM_OFFSET;
 
 pub mod hba;
 pub mod fis;
-//pub mod atapi;
 pub mod constants;
-pub mod port;
+/// `Disk` implementation for (S)ATA disks
+pub mod ata;
+/// `Disk` implementation for (S)ATAPI disks
+pub mod atapi;
 
-use crate::driver::ahci::fis::FisRegisterHostToDevice;
-use crate::PHYS_MEM_OFFSET;
-
-use core::ops::Range;
-use x86_64::{VirtAddr, PhysAddr};
-use crate::driver::ahci::constants::*;
-use crate::util::MemoryRead;
-use crate::driver::ahci::port::{HbaPort, HbaPortMemory};
-use crate::driver::ahci::hba::{HbaMemory, CommandTable, CommandHeader, PrdEntry};
-use alloc::boxed::Box;
-
-
-// Main AHCI Driver type ///////////////////////////////////////////////////////
-
-#[derive(Debug)]
-pub struct AhciDriver {
-    pub hba_memory: &'static mut HbaMemory,
-    pub ahci_mem_range: Range<u64>,
-    pub ports: [Option<Box<HbaPort>>; 32],
-}
-impl AhciDriver {
-    pub unsafe fn new(hba_memory_addr: PhysAddr, ahci_mem_range: Range<u64>) -> Self {
-        let hba_memory = unsafe { &mut *((hba_memory_addr.as_u64() + PHYS_MEM_OFFSET) as *mut HbaMemory) };
-        hba_memory.init();
-        let mut ports = [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None];
-        let ports_implemented = hba_memory.port_implemented.read();
-        for i in 0..32 {
-            if ((ports_implemented >> i) & 1) != 0 {
-                unsafe {
-                    let mut port_base = PhysAddr::new(&hba_memory.port_registers[i] as *const _ as u64);
-                    let port_mem_base = PhysAddr::new(ahci_mem_range.start + i as u64 * PORT_MEMORY_SIZE);
-                    let mut p = Box::new(HbaPort {
-                        hba: &mut *(&mut port_base as *mut _ as *mut HbaPortMemory),
-                        port_num: i as u32,
-                        port_mem_base,
-                    });
-                    p.init();
-                    ports[i] = Some(p);
-                };
-            }
-        }
-        Self { hba_memory, ahci_mem_range, ports }
-    }
-    pub fn set_ahci_enable(&mut self, value: bool) {
-        let old = self.hba_memory.global_host_control.read() & !(AhciGlobalHostControlBit::AhciEnable as u32);
-        self.hba_memory.global_host_control.write(old | match value {
-            false => 0, true => AhciGlobalHostControlBit::AhciEnable as u32
-        });
-    }
-    pub fn set_interrupt_enable(&mut self, value: bool) {
-        let old = self.hba_memory.global_host_control.read() & !(AhciGlobalHostControlBit::InterruptEnable as u32);
-        self.hba_memory.global_host_control.write(old | match value {
-            false => 0, true => AhciGlobalHostControlBit::InterruptEnable as u32
-        });
-    }
-    pub fn reset(&mut self) {
-        let old = self.hba_memory.global_host_control.read();
-        self.hba_memory.global_host_control.write(old | AhciGlobalHostControlBit::HbaReset as u32);
-        // TODO: replace with proper timer
-        let mut spin = 0;
-        while (self.hba_memory.global_host_control.read() & AhciGlobalHostControlBit::HbaReset as u32) != 0 && spin < (1<<15) {
-            spin += 1;
-        }
-        if spin == (1<<15) {
-            panic!("Timed out while resetting the HBA");
-        }
-    }
+pub trait Disk {
+    /// Returns the ID for this disk
+    fn id(&self) -> usize;
+    /// Returns the size of the disk in bytes, or `None` if the size is unknown
+    fn size(&mut self) -> Option<u64>;
+    /// Read data from the disk into the given buffer starting from block number `block`
+    fn read(&mut self, block: u64, buffer: &mut [u8]) -> Result<Option<usize>, anyhow::Error>;
+    /// Write data to the disk from the given buffer starting at block number `block`
+    fn write(&mut self, block: u64, buffer: &[u8]) -> Result<Option<usize>, anyhow::Error>;
+    /// Return this disk's block length in bytes
+    fn block_length(&mut self) -> Result<u32, anyhow::Error>;
 }
 
-/// ## Safety
-/// Caller must ensure all parameters are valid
-pub unsafe fn test_read(port: &mut HbaPort, start_lba_addr: u64, count: u16, buf: *mut u16) -> Result<(), ()> {
-    // find free slot
-    let slot = match port.find_command_slot() {
-        None => panic!("Cannot find free command list slot"),
-        Some(slot) => slot
-    };
+pub fn init(hba_mem_base: PhysAddr) -> (&'static mut HbaMemory, Vec<Box<dyn Disk>>) {
+    let hba_mem = unsafe { &mut *((hba_mem_base.as_u64() + PHYS_MEM_OFFSET) as *mut HbaMemory) };
+    hba_mem.init();
+    let pi = hba_mem.ports_impl.read();
+    let disks: Vec<Box<dyn Disk>> = (0..hba_mem.ports.len())
+          .filter(|&i| pi & 1 << i as i32 == 1 << i as i32)
+          .filter_map(|i| {
+              let port = unsafe { &mut *hba_mem.ports.as_mut_ptr().add(i) };
+              let port_type = port.probe();
+              crate::serial_println!("disk-{}: {:?}", i, port_type);
 
-    // command FIS
-    let mut cmd_fis = FisRegisterHostToDevice::new(start_lba_addr);
-    cmd_fis.is_from_command = true;
-    cmd_fis.port_mult_port = 0;
-    cmd_fis.command = AtaCommand::Identify;
-    cmd_fis.device = 0;//1 << 6; // LBA mode
-    cmd_fis.count = 1;
+              let disk: Option<Box<dyn Disk>> = match port_type {
+                  HbaPortType::SATA => {
+                      match AtaDisk::new(i, port) {
+                          Ok(disk) => Some(Box::new(disk)),
+                          Err(err) => {
+                              crate::serial_println!("{}: {}", i, err);
+                              None
+                          }
+                      }
+                  }
+                  HbaPortType::SATAPI => {
+                      match AtapiDisk::new(i, port) {
+                          Ok(disk) => Some(Box::new(disk)),
+                          Err(err) => {
+                              crate::serial_println!("{}: {}", i, err);
+                              None
+                          }
+                      }
+                  }
+                  _ => None,
+              };
+              disk
+          })
+          .collect();
 
-    // command table (contains FIS and PRDT)
-    let mut cmd_table = CommandTable::new(cmd_fis.into());
-
-    // command header (points to table)
-    let header_addr = port.port_mem_base.as_u64() + COMMAND_HEADER_SIZE * slot as u64;
-    let mut header = unsafe {
-        CommandHeader::read_from_addr(VirtAddr::new(header_addr + PHYS_MEM_OFFSET))
-    };
-    header.fis_length = 5;
-    header.prdt_len = 1;
-    header.host_to_device = true;
-    header.port_mult = 0;
-    cmd_table.prdt.push(PrdEntry::new(PhysAddr::new(buf as u64), 512, true));
-
-    unsafe { port.submit_command(slot, header, cmd_table); }
-    Ok(())
+    (hba_mem, disks)
 }
-

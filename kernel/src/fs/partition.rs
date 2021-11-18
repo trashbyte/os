@@ -5,10 +5,8 @@
 ///////////////////////////////////////////////////////////////////////////////L
 
 use alloc::vec::Vec;
-use crate::driver::StorageDriver;
 use crate::util::UUID;
 use alloc::string::String;
-use alloc::sync::Arc;
 use core::ops::Range;
 use core::fmt::{Debug, Formatter};
 
@@ -43,10 +41,10 @@ pub enum Partition {
 impl Partition {
     pub fn read_bytes(&self, addr_range: Range<u64>, buffer: &mut [u8]) {
         // TODO: there has to be a better way to do this
-        match &self {
-            Partition::GPT(part) => part.media.read_bytes(addr_range, buffer),
-            Partition::MBR(part) => part.media.read_bytes(addr_range, buffer)
-        }
+        // match &self {
+        //     Partition::GPT(part) => part.media.read_bytes(addr_range, buffer),
+        //     Partition::MBR(part) => part.media.read_bytes(addr_range, buffer)
+        // }
     }
 }
 
@@ -65,7 +63,7 @@ pub struct GptPartitionTable {
 }
 
 pub struct MbrPartition {
-    pub media: Arc<dyn StorageDriver>,
+    //pub media: Arc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,
@@ -78,7 +76,7 @@ impl Debug for MbrPartition {
 }
 
 pub struct GptPartition {
-    pub media: Arc<dyn StorageDriver>,
+    //pub media: Arc<dyn StorageDriver>,
     pub first_sector: u32,
     pub last_sector: u32,
     pub partition_type: PartitionType,

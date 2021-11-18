@@ -83,16 +83,13 @@ use x86_64::{VirtAddr, PhysAddr};
 use crate::memory::{BootInfoFrameAllocator, AHCI_MEM_REGION};
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::instructions::port::Port;
-use crate::driver::ahci::AhciDriver;
 use tinypci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
-use crate::service::DiskService;
-use crate::fs::partition::{MbrPartition, PartitionType, Partition};
-use alloc::sync::Arc;
-use crate::device::block::{BlockDevice, BlockDeviceMedia};
 use crate::vga_buffer::Color;
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
+use crate::driver::ahci;
 use crate::driver::ahci::constants::AHCI_MEMORY_SIZE;
+use alloc::boxed::Box;
 
 /// Start address where physical memory is identity mapped in virtual memory
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
@@ -290,9 +287,9 @@ pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
                 mmap_lock.add_region(region.clone());
             }
         }
-        // for region in mmap_lock.iter() {
-        //     os::serial_println!("{:?}", region);
-        // }
+        for region in mmap_lock.iter() {
+            crate::serial_println!("{:?}", region);
+        }
     }
     let found_ahci_mem = found_ahci_mem
         .expect("Failed to find free space for AHCI memory.");
@@ -301,22 +298,22 @@ pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
 
 pub fn init_services() {
     let mut step = StartupStep::begin("Initializing disk service");
-    let mut disk_srv = DiskService::new();
-    disk_srv.init();
-    let part = MbrPartition {
-        media: disk_srv.get(2).unwrap(),
-        first_sector: 0,
-        last_sector: 0,
-        partition_type: PartitionType::Filesystem
-    };
-    *crate::service::DISK_SERVICE.lock() = Some(disk_srv);
-    let _block_dev = Arc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
+    // let mut disk_srv = DiskService::new();
+    // disk_srv.init();
+    // let part = MbrPartition {
+    //     media: disk_srv.get(2).unwrap(),
+    //     first_sector: 0,
+    //     last_sector: 0,
+    //     partition_type: PartitionType::Filesystem
+    // };
+    // *crate::service::DISK_SERVICE.lock() = Some(disk_srv);
+    // let _block_dev = Arc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
     //let fs = unsafe { Arc::new(Ext2Filesystem::read_from(&block_dev).unwrap()) };
     //unsafe { *crate::fs::vfs::GLOBAL_VFS.lock() = Some(VFS::init(fs)); }
     step.ok();
 }
 
-pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) -> AhciDriver {
+pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) {
     crate::both_println!("Initializing AHCI controller...");
     let ahci_mem_region = AHCI_MEM_REGION.lock()
         .expect("called ahci_init without AHCI_MEM_REGION initialized")
@@ -334,11 +331,13 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) -> AhciDriver {
         .expect("No AHCI controller found.");
 
     let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
-    let mut driver = unsafe { AhciDriver::new(ahci_hba_addr, ahci_mem_range) };
-    driver.reset();
-    driver.set_ahci_enable(true);
-    driver.set_interrupt_enable(true);
-    driver
+    let (_hba_mem, mut disks) = ahci::init(ahci_hba_addr);
+
+    let mut buf = Box::new([69u8; 512]); // allocate on the heap
+    disks[0].read(0, buf.as_mut());
+    for i in 0..32 {
+        crate::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
+    }
 }
 
 // QEMU ////////////////////////////////////////////////////////////////////////

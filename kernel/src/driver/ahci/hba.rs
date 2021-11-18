@@ -1,29 +1,381 @@
 ///////////////////////////////////////////////////////////////////////////////L
+// The MIT License (MIT)
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-use volatile::Volatile;
-use x86_64::{PhysAddr, VirtAddr};
-use alloc::vec::Vec;
-use super::port::HbaPortMemory;
-use crate::util::{MemoryRead, MemoryWrite};
-use crate::driver::ahci::fis::Fis;
-use crate::PHYS_MEM_OFFSET;
+use core::mem::size_of;
 
-pub const HBA_PORT_IS_ERR: u32 = 1 << 30 | 1 << 29 | 1 << 28 | 1 << 27;
-pub const HBA_SSTS_PRESENT: u32 = 0x3;
+use super::fis::{FisType, FisRegH2D};
+use super::constants::*;
+use crate::PHYS_MEM_OFFSET;
+use crate::memory::AHCI_MEM_REGION;
+use volatile::Volatile;
+use alloc::string::String;
+use x86_64::VirtAddr;
+use alloc::boxed::Box;
 
 #[repr(C)]
 #[derive(Debug)]
-/// Representation of global HBA memory.
+/// The memory layout for a set of per-port registers, memory mapped to the HBA
+pub struct HbaPort {
+    /// 0x00, command list base address, 1K-byte aligned
+    pub cmd_list_base_addr: [Volatile<u32>; 2],
+    /// 0x08, FIS base address, 256-byte aligned
+    pub fis_base_addr: [Volatile<u32>; 2],
+    /// 0x10, interrupt status
+    pub interrupt_status: Volatile<u32>,
+    /// 0x14, interrupt enable
+    pub interrupt_enable: Volatile<u32>,
+    /// 0x18, command and status
+    pub command_and_status: Volatile<u32>,
+    /// 0x1C, Reserved
+    pub _reserved1: Volatile<u32>,
+    /// 0x20, task file data
+    pub task_file_data: Volatile<u32>,
+    /// 0x24, signature
+    pub signature: Volatile<u32>,
+    /// 0x28, SATA status (SCR0:SStatus)
+    pub sata_status: Volatile<u32>,
+    /// 0x2C, SATA control (SCR2:SControl)
+    pub sata_control: Volatile<u32>,
+    /// 0x30, SATA error (SCR1:SError)
+    pub sata_error: Volatile<u32>,
+    /// 0x34, SATA active (SCR3:SActive)
+    pub sata_active: Volatile<u32>,
+    /// 0x38, command issue
+    pub command_issue: Volatile<u32>,
+    /// 0x3C, SATA notification (SCR4:SNotification)
+    pub sata_notif: Volatile<u32>,
+    /// 0x40, FIS-based switch control
+    pub fis_switch_ctrl: Volatile<u32>,
+    /// 0x44 ~ 0x6F, Reserved
+    pub _reserved2: [Volatile<u32>; 11],
+    /// 0x70 ~ 0x7F, vendor specific
+    pub vendor: [Volatile<u32>; 4],
+}
+
+impl HbaPort {
+    /// Attempt to detect the type of device present on this port, if any
+    pub fn probe(&self) -> HbaPortType {
+        if self.sata_status.read() & HBA_SSTS_PRESENT != 0 {
+            HbaPortType::from_signature(self.signature.read())
+        } else {
+            HbaPortType::None
+        }
+    }
+
+    /// Start the command engine on this port
+    pub fn start(&mut self) {
+        while self.command_and_status.read() & HbaPortCmdBit::CmdListRunning.as_u32() != 0 {
+            // TODO: async wait
+        }
+
+        let old = self.command_and_status.read();
+        self.command_and_status.write(old | (HbaPortCmdBit::FisReceiveEnable | HbaPortCmdBit::Start).as_u32());
+    }
+
+    /// Stop the command engine on this port
+    pub fn stop(&mut self) {
+        let old = self.command_and_status.read();
+        self.command_and_status.write(old & !(HbaPortCmdBit::FisReceiveEnable | HbaPortCmdBit::Start).as_u32());
+
+        while self.command_and_status.read()
+            & (HbaPortCmdBit::FisReceiveRunning | HbaPortCmdBit::CmdListRunning).as_u32() != 0
+        {
+            // TODO: async wait
+        }
+
+    }
+
+    /// Finds an unused command slot or returns `None` if all ports are busy
+    pub fn slot(&self) -> Option<u32> {
+        let slots = self.sata_active.read() | self.command_issue.read();
+        for i in 0..32 {
+            if slots & 1 << i == 0 {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Initialize this port.
+    ///
+    /// This involves setting the command list and FIS addresses for the port,
+    /// as well as assigning command table pointers for each command header.
+    pub fn init(&mut self, num: u8) {
+        self.stop();
+
+        let all_ports_working_mem_base = AHCI_MEM_REGION.lock().unwrap().range.start_addr();
+        let working_mem_base = all_ports_working_mem_base + PORT_MEMORY_SIZE * num as u64;
+
+        let cmd_table_addr = AHCI_MEM_REGION.lock().unwrap().range.start_addr() + COMMAND_LIST_TOTAL_SIZE + RECEIVED_FIS_SIZE + (COMMAND_TABLE_SIZE * num as u64);
+
+        for i in 0..32 {
+            let cmd_hdr_addr = VirtAddr::new(working_mem_base + COMMAND_HEADER_SIZE * i + PHYS_MEM_OFFSET);
+            let cmdheader = unsafe { &mut *(cmd_hdr_addr.as_u64() as *mut HbaCommandHeader) };
+            cmdheader.cmd_table_base_addr.write(cmd_table_addr);
+            cmdheader.prdt_length.write(0);
+        }
+
+        self.cmd_list_base_addr[0].write(working_mem_base as u32);
+        self.cmd_list_base_addr[1].write((working_mem_base >> 32) as u32);
+        let fis_base = working_mem_base + COMMAND_LIST_TOTAL_SIZE;
+        self.fis_base_addr[0].write(fis_base as u32);
+        self.fis_base_addr[1].write((fis_base >> 32) as u32);
+        let is = self.interrupt_status.read();
+        self.interrupt_status.write(is);
+        self.interrupt_enable.write(0 /*TODO: Enable interrupts: 0b10111*/);
+        let serr = self.sata_error.read();
+        self.sata_error.write(serr);
+
+        // Disable power management
+        let sctl = self.sata_control.read() ;
+        self.sata_control.write(sctl
+            | (HbaPortPwrTransitionDisable::PartialDisable
+            |  HbaPortPwrTransitionDisable::SlumberDisable
+            |  HbaPortPwrTransitionDisable::DevSleepDisable));
+
+        // Power on and spin up device
+        self.command_and_status.write(self.command_and_status.read() | 1 << 2 | 1 << 1);
+
+        crate::serial_println!("   - AHCI init port {} - CMD: {:b}", num, self.command_and_status.read());
+    }
+
+    /// Send an ATA identify command to the disk
+    pub unsafe fn identify(&mut self) -> Option<u64> {
+        unsafe { self.identify_inner(AtaCommand::Identify.as_u8()) }
+    }
+
+    /// Send an ATAPI packet identify command to the disk
+    pub unsafe fn identify_packet(&mut self) -> Option<u64> {
+        unsafe { self.identify_inner(AtaCommand::AtapiIdentifyPacket.as_u8()) }
+    }
+
+    // Shared between identify() and identify_packet()
+    unsafe fn identify_inner(&mut self, cmd: u8) -> Option<u64> {
+        let dest = Box::new([0u16; 256]);
+
+        let slot = self.ata_start(|cmdheader, cmdfis, prdt_entry, _acmd| {
+            cmdheader.prdt_length.write(1);
+
+            prdt_entry.data_base_addr.write(dest.as_ref() as *const _ as u64 - PHYS_MEM_OFFSET);
+            prdt_entry.data_byte_count.write(512 | 1);
+
+            cmdfis.pm.write(1 << 7);
+            cmdfis.command.write(cmd);
+            cmdfis.device.write(0);
+            cmdfis.countl.write(1);
+            cmdfis.counth.write(0);
+        })?;
+
+        if self.ata_stop(slot).is_ok() {
+            let mut serial = String::new();
+            for word in 10..20 {
+                let d = dest[word];
+                let a = ((d >> 8) as u8) as char;
+                if a != '\0' {
+                    serial.push(a);
+                }
+                let b = (d as u8) as char;
+                if b != '\0' {
+                    serial.push(b);
+                }
+            }
+
+            let mut firmware = String::new();
+            for word in 23..27 {
+                let d = dest[word];
+                let a = ((d >> 8) as u8) as char;
+                if a != '\0' {
+                    firmware.push(a);
+                }
+                let b = (d as u8) as char;
+                if b != '\0' {
+                    firmware.push(b);
+                }
+            }
+
+            let mut model = String::new();
+            for word in 27..47 {
+                let d = dest[word];
+                let a = ((d >> 8) as u8) as char;
+                if a != '\0' {
+                    model.push(a);
+                }
+                let b = (d as u8) as char;
+                if b != '\0' {
+                    model.push(b);
+                }
+            }
+
+            let mut sectors = (dest[100] as u64) |
+                              ((dest[101] as u64) << 16) |
+                              ((dest[102] as u64) << 32) |
+                              ((dest[103] as u64) << 48);
+
+            let lba_bits = if sectors == 0 {
+                sectors = (dest[60] as u64) | ((dest[61] as u64) << 16);
+                28
+            } else {
+                48
+            };
+
+            crate::serial_println!("   + Serial: '{}' Firmware: '{}' Model: '{}' LBA: {}-bit Capacity: {} MB",
+                  serial.trim(), firmware.trim(), model.trim(), lba_bits, sectors / 2048);
+
+            Some(sectors * 512)
+        } else {
+            None
+        }
+    }
+
+    /// Begin an ATA DMA transaction
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - the starting LBA for the transaction
+    /// * `sectors` -  the number of sectors to transfer
+    /// * `write` - true -> writing to the device, false -> reading from the device
+    /// * `buf` - A reference to the host-side data buffer for sending/receiving data
+    pub fn ata_dma(&mut self, block: u64, sectors: usize, write: bool, buf: &mut Box<[u8; 256 * 512]>) -> Option<u32> {
+        crate::serial_println!("AHCI DMA - BLOCK: {:X} SECTORS: {} WRITE: {}", block, sectors, write);
+
+        assert!(sectors > 0 && sectors < 256);
+
+        self.ata_start(|cmdheader, cmdfis, prdt_entry, _acmd| {
+            if write {
+                let cfl = cmdheader.command_fis_length.read();
+                cmdheader.command_fis_length.write(cfl | 1 << 7 | 1 << 6)
+            }
+
+            cmdheader.prdt_length.write(1);
+
+            prdt_entry.data_base_addr.write(buf as *const _ as u64 - PHYS_MEM_OFFSET);
+            prdt_entry.data_byte_count.write(((sectors * 512) as u32) | 1);
+
+            cmdfis.pm.write(1 << 7);
+            if write {
+                cmdfis.command.write(AtaCommand::WriteDmaExt.as_u8());
+            } else {
+                cmdfis.command.write(AtaCommand::ReadDmaExt.as_u8());
+            }
+
+            cmdfis.lba0.write(block as u8);
+            cmdfis.lba1.write((block >> 8) as u8);
+            cmdfis.lba2.write((block >> 16) as u8);
+
+            cmdfis.device.write(1 << 6);
+
+            cmdfis.lba3.write((block >> 24) as u8);
+            cmdfis.lba4.write((block >> 32) as u8);
+            cmdfis.lba5.write((block >> 40) as u8);
+
+            cmdfis.countl.write(sectors as u8);
+            cmdfis.counth.write((sectors >> 8) as u8);
+        })
+    }
+
+    /// Send ATAPI packet
+    pub fn atapi_dma(&mut self, cmd: &[u8; 16], size: u32, buf: &mut Box<[u8; 256 * 512]>) -> Result<(), anyhow::Error> {
+        let slot = self.ata_start(|cmdheader, cmdfis, prdt_entry, acmd| {
+            let cfl = cmdheader.command_fis_length.read();
+            cmdheader.command_fis_length.write(cfl | 1 << 5);
+
+            cmdheader.prdt_length.write(1);
+
+            prdt_entry.data_base_addr.write(buf as *mut _ as u64 - PHYS_MEM_OFFSET);
+            prdt_entry.data_byte_count.write(size - 1);
+
+            cmdfis.pm.write(1 << 7);
+            cmdfis.command.write(AtaCommand::AtapiCmdPacket.as_u8());
+            cmdfis.device.write(0);
+            cmdfis.lba1.write(0);
+            cmdfis.lba2.write(0);
+            cmdfis.featurel.write(1);
+            cmdfis.featureh.write(0);
+
+            unsafe { core::ptr::write_volatile(acmd.as_mut_ptr() as *mut [u8; 16], *cmd) };
+        }).ok_or(anyhow::anyhow!("ATAPI DMA start failed"))?;
+        self.ata_stop(slot)
+    }
+
+    pub fn ata_start<F>(&mut self, callback: F) -> Option<u32>
+        where F: FnOnce(&mut HbaCommandHeader, &mut FisRegH2D, &mut HbaPrdtEntry, &mut [Volatile<u8>; 16])
+    {
+
+        //TODO: Should probably remove
+        self.interrupt_status.write(u32::MAX);
+
+        if let Some(slot) = self.slot() {
+            {
+                let header_addr = AHCI_MEM_REGION.lock().unwrap().range.start_addr() + (COMMAND_HEADER_SIZE * slot as u64) + PHYS_MEM_OFFSET;
+                let cmdheader = unsafe { &mut *(header_addr as *mut HbaCommandHeader) };
+                cmdheader.command_fis_length.write((size_of::<FisRegH2D>() / size_of::<u32>()) as u8);
+
+                let cmd_tbl_addr = AHCI_MEM_REGION.lock().unwrap().range.start_addr() + COMMAND_LIST_TOTAL_SIZE + RECEIVED_FIS_SIZE + (COMMAND_TABLE_SIZE * slot as u64) + PHYS_MEM_OFFSET;
+                let cmdtbl = unsafe { &mut *(cmd_tbl_addr as *mut HbaCommandTable) };
+                unsafe { core::ptr::write_bytes(cmdtbl as *mut HbaCommandTable as *mut u8, 0, COMMAND_TABLE_SIZE as usize); }
+
+                let cmdfis = unsafe { &mut *(cmdtbl.command_fis.as_mut_ptr() as *mut FisRegH2D) };
+                cmdfis.fis_type.write(FisType::RegH2D as u8);
+
+                let prdt_addr = cmd_tbl_addr + PRDT_OFFSET_IN_TABLE;
+                let prdt = unsafe { &mut *(prdt_addr as *mut HbaPrdtEntry) };
+
+                let acmd = unsafe { &mut *(cmdtbl.atapi_command.as_mut_ptr() as *mut [Volatile<u8>; 16]) };
+
+                callback(cmdheader, cmdfis, prdt, acmd)
+            }
+
+            while self.task_file_data.read() & (ATA_DEV_BUSY | ATA_DEV_DRQ) as u32 != 0 {
+                //unsafe { asm!("pause"); }
+            }
+
+            self.command_issue.write(self.command_issue.read() | 1 << slot);
+
+            //TODO: Should probably remove
+            self.start();
+
+            Some(slot)
+        } else {
+            None
+        }
+    }
+
+    pub fn ata_running(&self, slot: u32) -> bool {
+        (self.command_issue.read() & (1 << slot) != 0 || self.task_file_data.read() & 0x80 != 0) && self.interrupt_status.read() & HBA_PORT_IS_ERR == 0
+    }
+
+    pub fn ata_stop(&mut self, slot: u32) -> Result<(), anyhow::Error> {
+        while self.ata_running(slot) {
+            // TODO: async yield
+        }
+
+        self.stop();
+
+        if self.interrupt_status.read() & HBA_PORT_IS_ERR != 0 {
+            panic!("ERROR IS {:X} IE {:X} CMD {:X} TFD {:X}\nSSTS {:X} SCTL {:X} SERR {:X} SACT {:X}\nCI {:X} SNTF {:X} FBS {:X}",
+                   self.interrupt_status.read(), self.interrupt_enable.read(), self.command_and_status.read(), self.task_file_data.read(),
+                   self.sata_status.read(), self.sata_control.read(), self.sata_error.read(), self.sata_active.read(),
+                   self.command_issue.read(), self.sata_notif.read(), self.fis_switch_ctrl.read());
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug)]
 pub struct HbaMemory {
     /// 0x00, Host capability
-    pub host_capability: Volatile<u32>,
+    pub capabilities: Volatile<u32>,
     /// 0x04, Global host control
     pub global_host_control: Volatile<u32>,
     /// 0x08, Interrupt status
     pub interrupt_status: Volatile<u32>,
     /// 0x0C, Port implemented
-    pub port_implemented: Volatile<u32>,
+    pub ports_impl: Volatile<u32>,
     /// 0x10, Version
     pub version: Volatile<u32>,
     /// 0x14, Command completion coalescing control
@@ -31,261 +383,78 @@ pub struct HbaMemory {
     /// 0x18, Command completion coalescing ports
     pub ccc_ports: Volatile<u32>,
     /// 0x1C, Enclosure management location
-    pub em_location: Volatile<u32>,
+    pub enclosure_mgmt_loc: Volatile<u32>,
     /// 0x20, Enclosure management control
-    pub em_control: Volatile<u32>,
+    pub enclosure_mgmt_ctrl: Volatile<u32>,
     /// 0x24, Host capabilities extended
-    pub host_capabilities_ext: Volatile<u32>,
-    /// 0x28, BIOS/OS handoff control and status
-    pub bios_handoff_control: Volatile<u32>,
-
+    pub capabilities_ext: Volatile<u32>,
+    /// 0x24, Host capabilities extended
+    pub bios_handoff_ctrl: Volatile<u32>,
     /// 0x2C - 0x9F, Reserved
-    pub reserved: [Volatile<u8>; 0x74],
+    pub _reserved: [Volatile<u8>; 116],
     /// 0xA0 - 0xFF, Vendor specific registers
-    pub vendor_registers: [Volatile<u8>; 0x60],
-
+    pub vendor: [Volatile<u8>; 96],
     /// 0x100 - 0x10FF, Port control registers
-    pub port_registers:	[HbaPortMemory; 32]
+    pub ports: [HbaPort; 32],
 }
 
 impl HbaMemory {
     pub fn init(&mut self) {
         self.global_host_control.write(1 << 31 | 1 << 1);
 
-        crate::serial_println!("AHCI HBA Controller:");
-        crate::serial_println!("  Capabilities\t{:b}", self.host_capability.read());
-        crate::serial_println!("              \t{:b}", self.host_capabilities_ext.read());
-        crate::serial_println!("  Global host control\t{:X}", self.global_host_control.read());
-        crate::serial_println!("  Interrupt status\t{:b}", self.interrupt_status.read());
-        crate::serial_println!("  Ports implemented\t{:b}", self.port_implemented.read());
-        crate::serial_println!("  Version\t\t{:X}", self.version.read());
-        crate::serial_println!("  BIOS/OS handoff ctrl\t{:X}", self.bios_handoff_control.read());
+        crate::serial_println!("   - AHCI CAP {:X} GHC {:X} IS {:X} PI {:X} VS {:X} CAP2 {:X} BOHC {:X}",
+            self.capabilities.read(), self.global_host_control.read(), self.interrupt_status.read(), self.ports_impl.read(),
+            self.version.read(), self.capabilities_ext.read(), self.bios_handoff_ctrl.read());
     }
 }
 
-/// An entry in the Physical Region Descriptor Table
-#[derive(Clone, Copy, Debug)]
-pub struct PrdEntry {
-    pub data_base_addr: PhysAddr,
-    pub data_byte_count: u32,
-    pub interrupt_on_completion: bool,
-}
-impl PrdEntry {
-    pub fn new(data_base_addr: PhysAddr, data_byte_count: u32, interrupt_on_completion: bool) -> Self {
-        Self {
-            data_base_addr, data_byte_count, interrupt_on_completion
-        }
-    }
-}
-
-/// An AHCI Command Table
+#[repr(C)]
 #[derive(Debug)]
-pub struct CommandTable {
-    pub command_fis: Fis,
-    pub atapi_cmd: [u8; 16],
-    pub prdt: Vec<PrdEntry>,
-}
-impl CommandTable {
-    pub fn new(command_fis: Fis) -> Self {
-        Self {
-            command_fis,
-            atapi_cmd: [0u8; 16],
-            prdt: Vec::new(),
-        }
-    }
-}
-impl MemoryWrite for CommandTable {
-    /// Writes the contents of this table to the specified virtual address, formatted
-    /// as a AHCI Command Table.
-    ///
-    /// ## Safety
-    ///
-    /// Caller must ensure that the provided address is valid and properly aligned (1kb align).
-    unsafe fn write_to_addr(&self, addr: VirtAddr) {
-        // 0x00: Command FIS
-        let target = addr.as_u64() as *mut Volatile<[u8; 64]>;
-        let mut vec = Vec::new();
-        self.command_fis.write_to_buffer(&mut vec);
-        vec.resize(64, 0);
-        let mut data = [0u8; 64];
-        data.copy_from_slice(vec.as_slice());
-        unsafe { (*target).write(data); }
-        // 0x40: ATAPI Command (optional)
-        let target = (addr.as_u64() + 0x40) as *mut Volatile<[u8; 16]>;
-        unsafe { (*target).write(self.atapi_cmd); }
-        // 0x50: Reserved region
-        let target = (addr.as_u64() + 0x50) as *mut Volatile<[u8; 48]>;
-        unsafe { (*target).write([0u8; 48]); } // zeroes for reserved region
-        // 0x80: Physical Region Descriptor Table
-        for (i, p) in self.prdt.iter().enumerate() {
-            let mut buf = [0u32; 4];
-            // data base addr, low half
-            buf[0] = (p.data_base_addr.as_u64() & 0xFFFFFFFF) as u32;
-            // data base addr, upper half
-            buf[1] = ((p.data_base_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32;
-            // reserved region
-            buf[2] = 0;
-            // data byte count and interrupt bit
-            buf[3] = (p.data_byte_count & 0x3fffffff) | (match p.interrupt_on_completion { true => 0x80000000, false => 0 });
-            // volatile write
-            let target = (addr.as_u64() + 0x80 + (16 * i as u64)) as *mut Volatile<[u32; 4]>;
-            unsafe { (*target).write(buf); }
-        }
-    }
+pub struct HbaPrdtEntry {
+    /// Data base address
+    data_base_addr: Volatile<u64>,
+    /// Reserved
+    _reserved: Volatile<u32>,
+    /// Byte count, 4M max, interrupt = 1
+    data_byte_count: Volatile<u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
-/// HBA Command Header
-///
-/// A Command Header is an entry in a Command List, containing a reference to a Command Table
-/// along with some metadata.
-// TODO: replace this with a memory-transparent wrapper and utility functions to avoid using extra memory
-pub struct CommandHeader {
-    pub fis_length: u8,
-    pub is_atapi: bool,
-    pub host_to_device: bool,
-    pub prefetchable: bool,
-    pub reset_bit: bool,
-    pub bist_bit: bool,
-    pub should_clear_busy_on_ok: bool,
-    pub port_mult: u8,
-    pub prdt_len: u16,
-    pub prdt_bytes_transferred: u32,
-    pub command_table_addr: PhysAddr,
-}
-impl MemoryWrite for CommandHeader {
-    unsafe fn write_to_addr(&self, address: VirtAddr) {
-        // 0x00
-        // [7]: prefetchable
-        // [6]: Write, 1: H2D, 0: D2H
-        // [5]: ATAPI
-        // [4-0]: Command FIS length in DWORDS, 2 ~ 16
-        let target = address.as_u64() as *mut Volatile<u8>;
-        unsafe {
-            (*target).write(
-                (self.fis_length & 0b11111)
-                    | (match self.is_atapi {
-                    true => 0x20,
-                    false => 0
-                })
-                    | (match self.host_to_device {
-                    true => 0x40,
-                    false => 0
-                })
-                    | (match self.prefetchable {
-                    true => 0x80,
-                    false => 0
-                })
-            );
-        }
-
-        // 0x01
-        // [7-4]: Port multiplier port
-        // [3]: Reserved
-        // [2]: Clear busy upon R_OK
-        // [1]: Built-In Self Test
-        // [0]: Reset
-        let target = (address.as_u64() + 0x01) as *mut Volatile<u8>;
-        unsafe {
-            (*target).write(
-                (self.port_mult << 4)
-                    | (match self.should_clear_busy_on_ok {
-                    true => 0x4,
-                    false => 0
-                })
-                    | (match self.bist_bit {
-                    true => 0x02,
-                    false => 0
-                })
-                    | (match self.reset_bit {
-                    true => 0x01,
-                    false => 0
-                })
-            );
-        }
-
-        // 0x02-0x03: PRDT Length (in entries)
-        let target = (address.as_u64() + 0x02) as *mut Volatile<u16>;
-        unsafe { (*target).write(self.prdt_len); }
-        // 0x04-0x07: PDRT bytes transferred (software should set to zero)
-        let target = (address.as_u64() + 0x04) as *mut Volatile<u32>;
-        unsafe { (*target).write(self.prdt_bytes_transferred); }
-        // 0x08-0x0B: Command table base address, lower half
-        let target = (address.as_u64() + 0x08) as *mut Volatile<u32>;
-        // must be 128-byte aligned
-        unsafe { (*target).write((self.command_table_addr.as_u64() & 0xFFFFFF80) as u32); }
-        // 0x0C-0x0F: Command table base address, upper half
-        let target = (address.as_u64() + 0x0C) as *mut Volatile<u32>;
-        unsafe { (*target).write(((self.command_table_addr.as_u64() >> 32) & 0xFFFFFFFF) as u32); }
-        // 0x10-0x1F: Reserved
-        let target = (address.as_u64() + 0x10) as *mut Volatile<[u32; 4]>;
-        unsafe { (*target).write([0u32; 4]); }
-    }
-}
-impl MemoryRead for CommandHeader {
-    unsafe fn read_from_addr(address: VirtAddr) -> Self {
-        // 0x00
-        // [7]: prefetchable
-        // [6]: Write, 1: H2D, 0: D2H
-        // [5]: ATAPI
-        // [4-0]: Command FIS length in DWORDS, 2 ~ 16
-        let target = address.as_u64() as *mut Volatile<u8>;
-        let byte0 = unsafe { (*target).read() };
-        let fis_length = byte0 & 0b11111;
-        let is_atapi = (byte0 & 0x20) != 0;
-        let host_to_device = (byte0 & 0x40) != 0;
-        let prefetchable = (byte0 & 0x80) != 0;
-        // 0x01
-        // [7-4]: Port multiplier port
-        // [3]: Reserved
-        // [2]: Clear busy upon R_OK
-        // [1]: Built-In Self Test
-        // [0]: Reset
-        let target = (address.as_u64() + 0x01) as *mut Volatile<u8>;
-        let byte1 = unsafe { (*target).read() };
-        let port_mult = byte1 & 0b11110000;
-        let should_clear_busy_on_ok = (byte1 & 0x4) != 0;
-        let bist_bit = (byte1 & 0x2) != 0;
-        let reset_bit = (byte1 & 0x1) != 0;
-        // 0x02-0x03: PRDT Length (in entries)
-        let target = (address.as_u64() + 0x02) as *mut Volatile<u16>;
-        let prdt_len = unsafe { (*target).read() };
-        // 0x04-0x07: PDRT bytes transferred (software should set to zero)
-        let target = (address.as_u64() + 0x04) as *mut Volatile<u32>;
-        let prdt_bytes_transferred = unsafe { (*target).read() };
-        // 0x08-0x0B: Command table base address, lower half
-        let target = (address.as_u64() + 0x08) as *mut Volatile<u32>;
-        let addr_low = unsafe { (*target).read() };
-        // 0x0C-0x0F: Command table base address, upper half
-        let target = (address.as_u64() + 0x0C) as *mut Volatile<u32>;
-        let addr_high = unsafe { (*target).read() };
-        let command_table_addr = PhysAddr::new(addr_low as u64 + ((addr_high as u64) << 32));
-        // 0x10-0x1F: Reserved
-
-        Self {
-            fis_length, is_atapi, host_to_device, prefetchable, reset_bit,
-            bist_bit, should_clear_busy_on_ok, port_mult, prdt_len, prdt_bytes_transferred,
-            command_table_addr
-        }
-    }
-}
-
-
-/// HBA Command List.
-///
-/// There's one command list per port, and each one can hold up to 32 Command Headers.
+#[repr(C)]
 #[derive(Debug)]
-pub struct HbaCommandList {
-    base_address_phys: PhysAddr,
-    base_address_virt: VirtAddr,
-    headers: [Option<CommandHeader>; 32],
+pub struct HbaCommandTable {
+    /// 0x00 - Command FIS
+    command_fis: [Volatile<u8>; 64],
+
+    /// 0x40 - ATAPI command, 12 or 16 bytes
+    atapi_command: [Volatile<u8>; 16],
+
+    /// 0x50 - Reserved
+    _reserved: [Volatile<u8>; 48],
+
+    /// 0x80 - Physical region descriptor table entries, limited to 0 ~ 32 in this implementation
+    prdt_entries: [HbaPrdtEntry; 32],
 }
-impl HbaCommandList {
-    pub fn new(base_addr: VirtAddr) -> Self {
-        Self {
-            base_address_phys: PhysAddr::new(base_addr.as_u64() - PHYS_MEM_OFFSET),
-            base_address_virt: base_addr,
-            headers: [None; 32],
-        }
-    }
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct HbaCommandHeader {
+    // DW0
+    /// Command FIS length in DWORDS, 2 ~ 16, atapi: 4, write - host to device: 2, prefetchable: 1
+    command_fis_length: Volatile<u8>,
+    /// Reset - 0x80, bist: 0x40, clear busy on ok: 0x20, port multiplier
+    port_multipler_port: Volatile<u8>,
+    /// Physical region descriptor table length in entries
+    prdt_length: Volatile<u16>,
+
+    // DW1
+    /// Physical region descriptor byte count transferred
+    prd_bytes_transferred: Volatile<u32>,
+
+    // DW2, 3
+    /// Command table descriptor base address
+    cmd_table_base_addr: Volatile<u64>,
+
+    // DW4 - 7
+    /// Reserved
+    _reserved: [Volatile<u32>; 4],
 }

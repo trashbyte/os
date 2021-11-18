@@ -11,6 +11,8 @@ use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, Phys
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType, MemoryRegion};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use bitflags::_core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
 
 lazy_static! {
     pub static ref GLOBAL_MEMORY_MAP: Mutex<MemoryMap> = Mutex::new(MemoryMap::new());
@@ -42,7 +44,7 @@ pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static>
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 #[derive(Debug)]
 pub struct BootInfoFrameAllocator {
-    next: usize,
+    next: AtomicU64,
 }
 
 impl BootInfoFrameAllocator {
@@ -52,20 +54,18 @@ impl BootInfoFrameAllocator {
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
     pub unsafe fn init() -> Self {
-        BootInfoFrameAllocator { next: 0 }
+        BootInfoFrameAllocator { next: AtomicU64::new(0) }
     }
 }
 
 // TODO: deallocate frames
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = GLOBAL_MEMORY_MAP.lock().iter()
+        GLOBAL_MEMORY_MAP.lock().iter()
             .filter(|r| r.region_type == MemoryRegionType::Usable)
             .map(|r| r.range.start_addr()..r.range.end_addr())
             .flat_map(|r| r.step_by(4096))
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
-            .nth(self.next);
-        self.next += 1;
-        frame
+            .nth(self.next.fetch_add(1, Ordering::Relaxed) as usize)
     }
 }

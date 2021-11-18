@@ -48,10 +48,11 @@ impl FixedSizeBlockAllocator {
 
     /// Allocates using the fallback memory.allocator.
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
-        match self.fallback_allocator.allocate_first_fit(layout) {
+        let res = match self.fallback_allocator.allocate_first_fit(layout) {
             Ok(ptr) => ptr.as_ptr(),
             Err(_) => ptr::null_mut(),
-        }
+        };
+        res
     }
 }
 
@@ -90,7 +91,9 @@ unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {
                     }
                 }
             }
-            None => allocator.fallback_alloc(layout),
+            None => {
+                allocator.fallback_alloc(layout)
+            },
         }
     }
 
