@@ -4,6 +4,8 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
+//! The main crate for the \[untitled os] kernel.
+
 #![no_std]
 
 #![warn(absolute_paths_not_starting_with_crate,
@@ -44,45 +46,62 @@
 
 extern crate alloc;
 
+pub use chrono;
+
+/// ACPI support
 pub mod acpi;
+/// Architecture-specific implementations
 pub mod arch;
+/// Devices that support reading and/or writing, physical or virtual
 pub mod device;
+/// Drivers for specific hardware
 pub mod driver;
+/// Functions for decoding byte strings of various encodings to unicode and encoding them back
 pub mod encoding;
+/// Filesystem types and implementations
 pub mod fs;
+/// Memory management and allocators
 pub mod memory;
+/// Utilities for working with filesystem paths
 pub mod path;
+/// Global services for managing resources
 pub mod service;
+/// Interactive shell system and parser
 pub mod shell;
+/// General utilities
 pub mod util;
+/// Text-mode VGA output
 pub mod vga_buffer;
+/// Async executor and basic runnable task
 pub mod task;
+/// Types and functions for dealing with times and dates
 pub mod time;
 
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, PhysAddr};
 
-use crate::memory::BootInfoFrameAllocator;
+use crate::memory::{BootInfoFrameAllocator, AHCI_MEM_REGION};
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::instructions::port::Port;
 use crate::driver::ahci::AhciDriver;
-#[cfg(test)]
-use bootloader::BootInfo;
 use tinypci::{PciDeviceInfo, PciClass};
 use alloc::vec::Vec;
-use core::ops::Range;
 use crate::service::DiskService;
 use crate::fs::partition::{MbrPartition, PartitionType, Partition};
 use alloc::sync::Arc;
 use crate::device::block::{BlockDevice, BlockDeviceMedia};
 use crate::vga_buffer::Color;
+use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
+use crate::driver::ahci::constants::AHCI_MEMORY_SIZE;
 
 /// Start address where physical memory is identity mapped in virtual memory
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 
 // Testing stuff ///////////////////////////////////////////////////////////////////////////////////
 
+/// Auto trait for test cases. Wraps them in print calls to output `module::function... [ok]` and whatnot.
 pub trait Testable {
+    /// Run the test case
     fn run(&self) -> ();
 }
 
@@ -97,6 +116,7 @@ impl<T> Testable for T
     }
 }
 
+/// Entry point for test runner. Passed a list of [Testable]s to run.
 pub fn test_runner(tests: &[&dyn Testable]) {
     serial_println!("Running {} tests", tests.len());
     for test in tests {
@@ -105,11 +125,13 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     exit_qemu(QemuExitCode::Success);
 }
 
+/// Panic handler for tests.
+/// Prints `[failed]` along with the error and exits QEMU with an error code.
 pub fn test_panic_handler(info: &PanicInfo<'_>) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     exit_qemu(QemuExitCode::Failed);
-    loop {}
+    unreachable!()
 }
 
 /// Entry point for `cargo test`
@@ -131,14 +153,20 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
-// Startup step printer
-
+/// Scope-based utility for printing kernel startup messages.
+/// Draws the message out first, with `[      ]` at the beginning,
+/// then adds `ok` or `failed` when dropped depending on the result.
 #[derive(Debug)]
 pub struct StartupStep {
+    /// True if the step succeeded
     ok: bool
 }
 
 impl StartupStep {
+    /// Begins a new startup step with the given message.
+    /// Keep a reference to the returned object, it prints
+    /// the result when dropped.
+    #[must_use]
     pub fn begin(msg: & str) -> Self {
         serial_print!("{}... ", msg);
         print!("[      ] {}", msg);
@@ -146,9 +174,14 @@ impl StartupStep {
         Self { ok: false }
     }
 
+    /// Set the step to have succeeded
     pub fn ok(&mut self) { self.ok = true; }
+    /// Set the step to have failed.
+    /// This is the default for new steps, so it's usually unnecessary,
+    /// but you may want to "un-ok" a step after calling `ok()`.
     pub fn fail(&mut self) { self.ok = false; }
 
+    /// Sets the value of `ok` based on whether the given result was `Ok` or `Err`.
     pub fn result(&mut self, res: &Result<(), anyhow::Error>) {
         self.ok = res.is_ok();
         // do something with error msg?
@@ -188,6 +221,7 @@ pub struct MemoryInitResults {
 }
 
 pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
+    let mut step = StartupStep::begin("Initializing heap");
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
     memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
@@ -195,6 +229,7 @@ pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
 
     *memory::HAVE_ALLOC.lock() = true;
 
+    step.ok();
     MemoryInitResults { mapper, frame_allocator }
 }
 
@@ -227,7 +262,45 @@ pub fn init_pci() -> Vec<PciDeviceInfo> {
     pci_infos
 }
 
-pub fn init_devices() {
+pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
+    // search memory map provided by bootloader for a free memory region for AHCI
+    let mut found_ahci_mem = None;
+    {
+        let mut step = StartupStep::begin("Building global memory map");
+        let mut mmap_lock = memory::GLOBAL_MEMORY_MAP.lock();
+        for region in boot_info.memory_map.iter() {
+            if found_ahci_mem.is_none() && region.region_type == MemoryRegionType::Usable &&
+                region.range.end_addr() - region.range.start_addr() >= AHCI_MEMORY_SIZE {
+                let ahci_region = MemoryRegion {
+                    range: FrameRange::new(region.range.start_addr(), region.range.start_addr() + AHCI_MEMORY_SIZE),
+                    region_type: MemoryRegionType::InUse
+                };
+                let leftover = region.range.end_addr() - region.range.start_addr() - AHCI_MEMORY_SIZE;
+                let leftover_region = MemoryRegion {
+                    range: FrameRange::new(region.range.start_addr() + leftover, region.range.end_addr()),
+                    region_type: MemoryRegionType::Usable
+                };
+
+                mmap_lock.add_region(ahci_region);
+                mmap_lock.add_region(leftover_region);
+
+                found_ahci_mem = Some(ahci_region);
+                step.ok();
+            } else {
+                mmap_lock.add_region(region.clone());
+            }
+        }
+        // for region in mmap_lock.iter() {
+        //     os::serial_println!("{:?}", region);
+        // }
+    }
+    let found_ahci_mem = found_ahci_mem
+        .expect("Failed to find free space for AHCI memory.");
+    *AHCI_MEM_REGION.lock() = Some(found_ahci_mem);
+}
+
+pub fn init_services() {
+    let mut step = StartupStep::begin("Initializing disk service");
     let mut disk_srv = DiskService::new();
     disk_srv.init();
     let part = MbrPartition {
@@ -240,13 +313,20 @@ pub fn init_devices() {
     let _block_dev = Arc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
     //let fs = unsafe { Arc::new(Ext2Filesystem::read_from(&block_dev).unwrap()) };
     //unsafe { *crate::fs::vfs::GLOBAL_VFS.lock() = Some(VFS::init(fs)); }
+    step.ok();
 }
 
-pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>, ahci_mem_range: Range<u64>) -> AhciDriver {
+pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) -> AhciDriver {
+    crate::both_println!("Initializing AHCI controller...");
+    let ahci_mem_region = AHCI_MEM_REGION.lock()
+        .expect("called ahci_init without AHCI_MEM_REGION initialized")
+        .range;
+    let ahci_mem_range = ahci_mem_region.start_addr()..ahci_mem_region.end_addr();
     for addr in ahci_mem_range.clone() {
         // zero out all AHCI memory
         unsafe { *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0; }
     }
+    crate::both_println!("Zeroed AHCI host memory region");
 
     let ahci_controller_info = pci_infos.iter()
         .filter(|x| { x.class() == PciClass::MassStorage })

@@ -252,7 +252,7 @@ impl Ext2Filesystem {
             // make sure we dont read an invalid string past the end of the buffer
             assert!((offset + 9 + dir_entry.name_length as usize) < block.len());
             let file_name = unsafe {
-                crate::encoding::ISO_8859_1::decode_ptr(name_start_ptr,
+                crate::encoding::iso_8859_1::decode_ptr(name_start_ptr,
                                                         dir_entry.name_length as usize,
                                                         Some(InvalidCharPolicy::ReplaceWithUnknownSymbol)
                 ).unwrap()

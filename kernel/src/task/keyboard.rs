@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////L
+// The MIT License (MIT)
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
+///////////////////////////////////////////////////////////////////////////////L
+
 use conquer_once::spin::OnceCell;
 use crossbeam::queue::ArrayQueue;
 use pc_keyboard::{ScancodeSet1, layouts, Keyboard, HandleControl, DecodedKey, KeyState, KeyCode};

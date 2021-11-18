@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////L
+// The MIT License (MIT)
+// Copyright (c) 2021 [untitled os] Team
+// See LICENSE.txt and CREDITS.txt for details
+///////////////////////////////////////////////////////////////////////////////L
+
 use super::{Task, TaskId};
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::task::{Waker, Context, Poll};

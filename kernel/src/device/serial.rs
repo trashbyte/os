@@ -14,6 +14,7 @@ use lazy_static::lazy_static;
 
 #[cfg(target_arch = "x86_64")]
 lazy_static! {
+    /// The UART serial port mapped at port 0x3F8
     pub static ref SERIAL1: Mutex<SerialPort> = {
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
@@ -46,6 +47,7 @@ pub fn _print(args: core::fmt::Arguments<'_>) {
 }
 
 
+/// Print a string to SERIAL1 (without adding a newline)
 #[macro_export]
 macro_rules! serial_print {
     ($($arg:tt)*) => {
@@ -54,6 +56,7 @@ macro_rules! serial_print {
 }
 
 
+/// Print a string to SERIAL1 with a newline after it
 #[macro_export]
 macro_rules! serial_println {
     () => ($crate::serial_print!("\n"));

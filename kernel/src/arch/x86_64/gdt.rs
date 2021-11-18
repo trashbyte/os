@@ -10,8 +10,10 @@ use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector
 use lazy_static::lazy_static;
 use x86_64::instructions::segmentation::Segment;
 
+/// The index of the double fault handler entry in the IST
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
+/// Segment selectors for CS and TSS
 struct Selectors {
     code_selector: SegmentSelector,
     tss_selector: SegmentSelector,
@@ -41,10 +43,13 @@ lazy_static! {
     };
 }
 
+/// Initializes the global descriptor table
 pub fn init() {
+    let mut step = crate::StartupStep::begin("Initializing GDT");
     GDT.0.load();
     unsafe {
         x86_64::instructions::segmentation::CS::set_reg(GDT.1.code_selector);
         x86_64::instructions::tables::load_tss(GDT.1.tss_selector);
     }
+    step.ok();
 }

@@ -33,8 +33,7 @@ pub enum EncodingError {
     InvalidCharacter
 }
 
-#[allow(non_snake_case)]
-pub mod ISO_8859_1;
+pub mod iso_8859_1;
 
 
 pub(crate) fn handle_invalid(c: CharacterType, policy: &Option<InvalidCharPolicy>) -> EncodingResult {

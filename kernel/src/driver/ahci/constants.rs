@@ -7,17 +7,21 @@
 use num_derive::FromPrimitive;
 
 
-pub const COMMAND_LIST_SIZE: u64 = 1024;
-pub const COMMAND_FIS_SIZE: u64 = 64;
-pub const RECEIVING_FIS_SIZE: u64 = 256;
+//pub const COMMAND_FIS_SIZE: u64 = 64;
+pub const RECEIVED_FIS_SIZE: u64 = 256;
 pub const COMMAND_HEADER_SIZE: u64 = 32;
+pub const COMMAND_LIST_TOTAL_SIZE: u64 = COMMAND_HEADER_SIZE * 32;
 pub const PRDT_OFFSET_IN_TABLE: u64 = 0x80;
 pub const PRDT_SIZE: u64 = 16;
-pub const PRDT_LIST_TOTAL_SIZE: u64 = PRDT_SIZE * 256;
+pub const NUM_PRDTS_PER_COMMAND: u64 = 32;
+pub const PRDT_LIST_TOTAL_SIZE: u64 = PRDT_SIZE * NUM_PRDTS_PER_COMMAND;
+// Command tables must be 128-byte aligned, but 4224 is already a multiple of 128
 pub const COMMAND_TABLE_SIZE: u64 = PRDT_LIST_TOTAL_SIZE + PRDT_OFFSET_IN_TABLE; // 4224 bytes
+pub const COMMAND_TABLE_LIST_OFFSET: u64 = COMMAND_LIST_TOTAL_SIZE + RECEIVED_FIS_SIZE + PRDT_LIST_TOTAL_SIZE;
+pub const PORT_MEMORY_SIZE: u64 = COMMAND_TABLE_LIST_OFFSET + COMMAND_TABLE_SIZE * 32;
 
 /// Total size of AHCI memory region in bytes.
-pub const AHCI_MEMORY_SIZE: u64 = (COMMAND_LIST_SIZE + RECEIVING_FIS_SIZE + PRDT_LIST_TOTAL_SIZE) * 32;
+pub const AHCI_MEMORY_SIZE: u64 = PORT_MEMORY_SIZE * 32;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
@@ -27,6 +31,7 @@ pub enum AtaCommand {
     ReadDmaExt = 0x25,
     WriteDma = 0xCA,
     WriteDmaExt = 0x35,
+    Identify = 0xEC,
 }
 impl AtaCommand { pub fn as_u8(self) -> u8 { self as u8 } }
 

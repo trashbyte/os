@@ -35,6 +35,23 @@ impl Shell {
     }
 
     pub fn submit(&mut self) {
+        // let pairs = IdentParser::parse(Rule::expr, r##" ls() + a_29 * 3 "##).unwrap_or_else(|e| panic!("{}", e));
+        // for pair in pairs {
+        //     // A pair is a combination of the rule which matched and a span of input
+        //     println!(r#"{:<8} {:>3}{:<3} "{}""#,
+        //              alloc::format!("{:?}", pair.as_rule()),
+        //              alloc::format!("{:2}..", pair.as_span().start()),
+        //              pair.as_span().end(),
+        //              pair.as_str());
+        //     // A pair can be converted to an iterator of the tokens which make it up:
+        //     for inner_pair in pair.into_inner() {
+        //         match inner_pair.as_rule() {
+        //             Rule::alpha => println!("Letter:  {}", inner_pair.as_str()),
+        //             Rule::digit => println!("Digit:   {}", inner_pair.as_str()),
+        //             _ => unreachable!()
+        //         };
+        //     }
+        // }
         let s = self.command_str.trim();
         if s.len() > 0 {
             if s == "ls" {

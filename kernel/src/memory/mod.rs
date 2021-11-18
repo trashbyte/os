@@ -8,7 +8,7 @@ pub mod allocator;
 
 use x86_64::{structures::paging::PageTable, VirtAddr, PhysAddr};
 use x86_64::structures::paging::{OffsetPageTable, FrameAllocator, Size4KiB, PhysFrame};
-use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
+use bootloader::bootinfo::{MemoryMap, MemoryRegionType, MemoryRegion};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
@@ -17,6 +17,7 @@ lazy_static! {
 }
 
 pub static HAVE_ALLOC: Mutex<bool> = Mutex::new(false);
+pub static AHCI_MEM_REGION: Mutex<Option<MemoryRegion>> = Mutex::new(None);
 
 
 /// Initialize a new OffsetPageTable.

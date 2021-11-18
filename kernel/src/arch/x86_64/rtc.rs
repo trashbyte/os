@@ -9,8 +9,10 @@ use x86_64::instructions::port::Port;
 
 
 pub fn init_rtc() {
+    let mut step = crate::StartupStep::begin("Initializing real-time clock");
     let mut rtc = Rtc::new();
     (*crate::time::TIME_START.lock()).0 = rtc.time();
+    step.ok();
 }
 
 

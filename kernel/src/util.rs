@@ -74,6 +74,7 @@ pub trait MemoryWrite {
 
 /// Trait for types that can be read from and written to raw virtual addresses.
 pub trait MemoryReadWrite: MemoryRead + MemoryWrite {}
+impl<T> MemoryReadWrite for T where T: MemoryRead + MemoryWrite {}
 
 pub unsafe fn debug_dump_memory(addr: VirtAddr, size: u32) {
     // arbitrary fixed number (need a const value for the raw ptr cast, and the actual

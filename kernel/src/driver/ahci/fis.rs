@@ -5,7 +5,7 @@
 ///////////////////////////////////////////////////////////////////////////////L
 
 #![allow(dead_code)]
-//! FIS Types
+//! Frame Information Structure Types
 //!
 //! FIS Types do not have `Volatile` fields because they should only be read from or written to
 //! through a `Volatile<SomeFisType>`.
@@ -14,22 +14,32 @@ use crate::driver::ahci::constants::AtaCommand;
 use crate::util::BufferWrite;
 use alloc::vec::Vec;
 
-
+/// All of the possible FIS types (excluding reserved or vendor-specific types)
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum FisType {
-    RegisterHostToDevice = 0x27, // Register FIS - host to device
-    RegisterDeviceToHost = 0x34, // Register FIS - device to host
-    DMAActivate          = 0x39, // DMA activate FIS - device to host
-    DMASetup             = 0x41, // DMA setup FIS - bidirectional
-    Data                 = 0x46, // Data FIS - bidirectional
-    BISTActivate         = 0x58, // BIST activate FIS - bidirectional
-    PIOSetup             = 0x5F, // PIO setup FIS - device to host
-    SetDeviceBits        = 0xA1, // Set device bits FIS - device to host
+    /// Register FIS - host to device
+    RegisterHostToDevice = 0x27,
+    /// Register FIS - device to host
+    RegisterDeviceToHost = 0x34,
+    /// DMA activate FIS - device to host
+    DMAActivate          = 0x39,
+    /// DMA setup FIS - bidirectional
+    DMASetup             = 0x41,
+    /// Data FIS - bidirectional
+    Data                 = 0x46,
+    /// BIST activate FIS - bidirectional
+    BISTActivate         = 0x58,
+    /// PIO setup FIS - device to host
+    PIOSetup             = 0x5F,
+    /// Set device bits FIS - device to host
+    SetDeviceBits        = 0xA1,
 }
 
+/// A Frame Information Structure for transmitting through SATA
 #[derive(Debug)]
 pub enum Fis {
+    /// Register FIS - host to device
     FisRegisterHostToDevice(FisRegisterHostToDevice),
     //FisRegisterDeviceToHost(FisRegisterDeviceToHost),
     //FisPioSetup(FisPioSetup),
@@ -37,6 +47,7 @@ pub enum Fis {
     //FisDmaSetup(FisDmaSetup),
 }
 impl Fis {
+    /// Returns the FisType corresponding to which `Fis` variant this is.
     pub fn fis_type(&self) -> FisType {
         match self {
             Fis::FisRegisterHostToDevice(_) => FisType::RegisterHostToDevice,
@@ -46,6 +57,7 @@ impl Fis {
             //Fis::FisDmaSetup(_) => FisType::DMASetup,
         }
     }
+    /// Writes the bytes that make up this FIS to the provided buffer.
     pub fn write_to_buffer(&self, bytes: &mut Vec<u8>) {
         match self {
             Fis::FisRegisterHostToDevice(f) => f.write_to_buffer(bytes),
@@ -54,13 +66,21 @@ impl Fis {
     }
 }
 
+/// FIS for transfering the shadow register block from the SATA host to a device.
+/// This is how commands are sent to a device.
 #[derive(Debug)]
 pub struct FisRegisterHostToDevice {
+    /// The target port on the port multiplier, if one is being used
     pub port_mult_port: u8,
+    /// True: command, false: control
     pub is_from_command: bool,
+    /// Contents of the command register (the ATA command sent to the device)
     pub command: AtaCommand,
+    /// Feature register
     pub features: u16,
+    /// LBA address to target with the issued ATA command
     pub lba_address: u64,
+    /// Device register
     pub device: u8,
     pub count: u16,
 }
@@ -77,11 +97,14 @@ impl FisRegisterHostToDevice {
         }
     }
 }
+impl Into<Fis> for FisRegisterHostToDevice {
+    fn into(self) -> Fis { Fis::FisRegisterHostToDevice(self) }
+}
 impl BufferWrite for FisRegisterHostToDevice {
     fn write_to_buffer(&self, bytes: &mut Vec<u8>) {
         bytes.resize(20, 0);
         // DWORD 0
-        // 0x00: FIS type
+        // 0x00: FIS type - FIS_TYPE_REG_H2D 0x27
         bytes[0x00] = FisType::RegisterHostToDevice as u8;
         // 0x01: [7-4]: Port mult, [3-1]: Reserved, [0]: 1=Command 0=Control
         bytes[0x01] = (self.port_mult_port & 0b11110000) | (match self.is_from_command { true => 1, false => 0 });
@@ -125,8 +148,10 @@ impl BufferWrite for FisRegisterHostToDevice {
 //  END OF STUFF THAT IS DONE
 ////////////////////////////////////////////////////////////////////////////////
 
+/// FIS for transfering the shadow register block from a SATA device to the host.
+/// This is how the result or status of a command is sent from a device to the host.
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(packed)]
 pub struct FisRegisterDeviceToHost {
     // DWORD 0
     pub fis_type: u8, // Always FisType::RegisterDeviceToHost
@@ -156,8 +181,9 @@ pub struct FisRegisterDeviceToHost {
     pub reserved3: [u8; 4] // Reserved
 }
 
+/// FIS for transferring payload data (media reads and writes, etc)
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(packed)]
 pub struct FisData {
     // DWORD 0
     pub fis_type: u8, // Always FisType::Data
@@ -169,8 +195,10 @@ pub struct FisData {
     pub data: [u32; 1], // Payload
 }
 
+/// FIS that a devices uses to provide the host with the necessary data
+/// before initializing a Port I/O transfer.
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(packed)]
 pub struct FisPioSetup {
     // DWORD 0
     pub fis_type: u8, // Always FisType::PioSetup
@@ -208,8 +236,9 @@ pub struct FisPioSetup {
     pub reserved3: [u8; 2] // Reserved
 }
 
+/// Bidirectional FIS used for configuring either the host or a device before a DMA transfer.
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(packed)]
 pub struct FisDmaSetup {
     // DWORD 0
     pub fis_type: u8, // Always FisType::DmaSetup

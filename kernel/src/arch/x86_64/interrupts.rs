@@ -59,6 +59,7 @@ impl InterruptIndex {
 }
 
 pub fn early_init_interrupts() {
+    let mut step = crate::StartupStep::begin("Initializing IDT");
     IDT.try_init_once(|| {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
@@ -102,6 +103,7 @@ pub fn early_init_interrupts() {
         idt
     }).expect("early_init_interrupts should only be called once");
     IDT.get().unwrap().load();
+    step.ok();
 }
 
 pub fn late_init_interrupts() {
@@ -120,7 +122,6 @@ pub fn late_init_interrupts() {
             entry.set_flags(IrqFlags::LEVEL_TRIGGERED | IrqFlags::LOW_ACTIVE | IrqFlags::MASKED);
             entry.set_dest(0); // CPU(s)
             ioapic.set_table_entry(crate::arch::interrupts::InterruptIndex::Keyboard.as_u8(), entry);
-
             ioapic.enable_irq(crate::arch::interrupts::InterruptIndex::Keyboard.as_u8()-32);
 
             *IO_APIC.lock() = Some(ioapic);
