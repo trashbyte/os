@@ -1,6 +1,15 @@
 name: build-x86_64
 on: [push]
 jobs:
+  clean_amend:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clean `--amend`ed run results
+      uses: trashbyte/oops@master
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        branch: master  
   build-x86_64:
     name: Build, run, and test for x86_64
     runs-on: ubuntu-latest
