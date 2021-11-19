@@ -90,6 +90,9 @@ use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
 use crate::driver::ahci;
 use crate::driver::ahci::constants::AHCI_MEMORY_SIZE;
 use alloc::boxed::Box;
+use crate::acpi::{AML_CONTEXT, AmlHandler, ACPI_TABLES};
+use aml::{AmlContext, DebugVerbosity};
+use spin::Mutex;
 
 /// Start address where physical memory is identity mapped in virtual memory
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
@@ -330,13 +333,63 @@ pub unsafe fn ahci_init(pci_infos: &[PciDeviceInfo]) {
         .expect("No AHCI controller found.");
 
     let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
-    let (_hba_mem, mut disks) = ahci::init(ahci_hba_addr);
+    let (_hba_mem, mut _disks) = ahci::init(ahci_hba_addr);
 
-    let mut buf = Box::new([69u8; 512]); // allocate on the heap
-    match disks[0].read(0, buf.as_mut()) { _ => {} }
-    for i in 0..32 {
-        crate::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
+    // let mut buf = Box::new([69u8; 512]); // allocate on the heap
+    // match disks[0].read(0, buf.as_mut()) { _ => {} }
+    // for i in 0..32 {
+    //     crate::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
+    // }
+}
+
+pub fn parse_aml() {
+    AML_CONTEXT.try_init_once(|| {
+        Mutex::new(AmlContext::new(Box::new(AmlHandler {}), DebugVerbosity::Scopes))
+    }).expect("parse_aml() can only be called once");
+    let acpi = ACPI_TABLES.get().unwrap();
+    let mut ctx = AML_CONTEXT.get().unwrap().lock();
+    if let Some(dsdt) = acpi.dsdt.as_ref() {
+        let ptr = (dsdt.address as u64 + PHYS_MEM_OFFSET) as *const u8;
+        let buffer = unsafe {
+            alloc::slice::from_raw_parts(ptr, dsdt.length as usize)
+        };
+        if let Err(e) = ctx.parse_table(buffer) {
+            panic!("{:?}", e)
+        }
     }
+    for table in acpi.ssdts.iter() {
+        let ptr = (table.address as u64 + PHYS_MEM_OFFSET) as *const u8;
+        let buffer = unsafe {
+            alloc::slice::from_raw_parts(ptr, table.length as usize)
+        };
+        if let Err(e) = ctx.parse_table(buffer) {
+            panic!("{:?}", e)
+        }
+    }
+    if let Err(e) = ctx.initialize_objects() {
+        panic!("{:?}", e)
+    }
+}
+
+pub fn shutdown() {
+    // TODO: proper ACPI shutdown
+
+    both_println!("Shutting down kernel");
+
+    // Magic shutdown using qemu default ACPI method
+    unsafe { Port::<u16>::new(0x604).write(0x2000); }
+
+    // Magic shutdown code for bochs and qemu (older versions).
+    for c in "Shutdown".bytes() {
+        unsafe { Port::<u8>::new(0x8900).write(c); }
+    }
+
+    // Magic code for VMWare. Also a hard lock.
+    println!("Shutdown with cli hlt");
+    loop {
+        unsafe { asm!("cli; hlt"); }
+    }
+
 }
 
 // QEMU ////////////////////////////////////////////////////////////////////////

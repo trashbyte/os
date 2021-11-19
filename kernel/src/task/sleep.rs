@@ -32,6 +32,11 @@ impl Future for Sleeper {
     }
 }
 
+/// Returns a Sleeper future to perform async wait in a task.
+///
+/// # Usage
+///
+/// ```sleep(Duration::from_millis(1000)).await```
 pub fn sleep(duration: Duration) -> impl Future<Output = ()> {
     let waker = Arc::new(AtomicWaker::new());
     let done = Arc::new(AtomicBool::new(false));

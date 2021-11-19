@@ -28,10 +28,12 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-      - run: chmod +x ci_run.sh
+      - name: Run `cargo run`
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --features "ci" -- -display none
       - run: cd kernel
-      - name: Run `cargo run` with CI exit
-        run: ./ci_run.sh
       - name: Run `cargo test`
         uses: actions-rs/cargo@v1
         with:

@@ -54,6 +54,9 @@ impl Shell {
         // }
         let s = self.command_str.trim();
         if !s.is_empty() {
+            if s == "shutdown" {
+                crate::shutdown();
+            }
            //  if s == "ls" {
            //      unsafe {
            //          let vfs: &VFS = &(*crate::fs::vfs::GLOBAL_VFS.as_ref().unwrap().lock());
@@ -128,9 +131,9 @@ impl Shell {
            //         print!("    Disk {} Partition 1 [{}]: {}\n", disk_id, fst.type_as_str(), uuid);
            //     }
            // }
-           //  else {
-                print!("Command '{}' not found.", self.command_str);
-            // }
+            else {
+                 print!("Command '{}' not found.", self.command_str);
+            }
             println!();
         }
         self.command_str = String::new();
