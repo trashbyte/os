@@ -48,3 +48,21 @@ bootloader = { version = "0.9.19", features = ["map_physical_memory"] }
 [[test]]
 name = "stack_overflow"
 harness = false
+
+# for tests
+[package.metadata.bootimage]
+run-command = [
+    "qemu-system-x86_64",
+    "-smp", "4",
+    "-m", "512M",
+    "-drive", "format=raw,file={}",
+    "-device", "ahci,id=ahci",
+    "-device", "ide-hd,bus=ahci.0,drive=vdisk",
+    "-serial", "stdio",
+    "-drive", "file=../hdb.img,if=none,format=raw,id=vdisk",
+    "-fda", "../fda.img",
+    "-display", "none",
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"
+]
+test-success-exit-code = 33 # (0x10 << 1) | 1
+test-timeout = 30 # (in seconds)

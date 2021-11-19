@@ -18,6 +18,8 @@ use futures_util::task::AtomicWaker;
 use crate::util::DoubleArrayQueue;
 use crate::time::Instant;
 
+// TODO: return error or something when queues are full instead of panicking
+
 pub static GLOBAL_EXECUTOR: OnceCell<Executor> = OnceCell::uninit();
 static RUNNING: Mutex<bool> = Mutex::new(false);
 
@@ -51,7 +53,7 @@ impl Executor {
         }
         *RUNNING.lock() = true;
 
-        if let Err(_) = self.0.task_queue.push(async_entry.id) {
+        if self.0.task_queue.push(async_entry.id).is_err() {
             panic!("task queue is full when initializing first task. this shouldn't be possible and indicates a bug in the executor");
         }
         if self.0.tasks.lock().insert(async_entry.id, async_entry).is_some() {
@@ -84,6 +86,7 @@ impl Executor {
         // after return from interrupt, executor begins loop again and checks sleepers
     }
 }
+// TODO: verify this
 unsafe impl Send for Executor {}
 unsafe impl Sync for Executor {}
 
@@ -115,7 +118,7 @@ impl ExecutorInner {
         while let Some((waker, expires, done)) = self.sleepers.get().pop() {
             let remaining = now.until(expires);
             //crate::serial_println!("remaining {}", remaining.as_millis());
-            if remaining.as_millis() <= 0 {
+            if remaining.as_millis() == 0 {
                 done.store(true, Ordering::Release);
                 waker.wake();
             }
@@ -148,9 +151,10 @@ impl ExecutorInner {
 
     fn check_spawns(&self) {
         while let Some((task, waker, done)) = self.pending_spawns.get().pop() {
-            if let Err(_) = self.task_queue.push(task.id) {
+            if self.task_queue.push(task.id).is_err() {
                 // queue full, delay spawn
-                self.pending_spawns.get_alt().push((task, waker, done));
+                self.pending_spawns.get_alt().push((task, waker, done))
+                    .expect("Pending spawns queue is full");
             }
             else {
                 if self.tasks.lock().insert(task.id, task).is_some() {
@@ -191,6 +195,7 @@ impl ExecutorInner {
     }
 }
 
+#[derive(Debug)]
 pub struct ExecutorSpawnFuture {
     waker: Arc<AtomicWaker>,
     done: Arc<AtomicBool>,
@@ -216,6 +221,7 @@ struct TaskWaker {
 }
 
 impl TaskWaker {
+    #[allow(clippy::new_ret_no_self)]
     fn new(task_id: TaskId) -> Waker {
         Waker::from(Arc::new(TaskWaker {
             task_id

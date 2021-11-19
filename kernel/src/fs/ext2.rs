@@ -499,9 +499,9 @@ impl From<InodeType> for DirectoryEntryType {
         }
     }
 }
-impl Into<VfsNodeType> for DirectoryEntryType {
-    fn into(self) -> VfsNodeType {
-        match self {
+impl From<DirectoryEntryType> for VfsNodeType {
+    fn from(entry_type: DirectoryEntryType) -> VfsNodeType {
+        match entry_type {
             DirectoryEntryType::Unknown => VfsNodeType::Unknown,
             DirectoryEntryType::FIFO => VfsNodeType::FIFO,
             DirectoryEntryType::CharDevice => VfsNodeType::CharDevice,

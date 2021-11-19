@@ -100,8 +100,19 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
+    #[cfg(feature = "ci")]
+    ci_exit();
+
     let exec = kernel::task::executor::Executor::init();
     exec.run(kernel::task::Task::new(async_main())) // -> !
+}
+
+#[allow(dead_code)]
+fn ci_exit() {
+    unsafe {
+        let mut port = Port::new(0xf4);
+        port.write(34u32);
+    }
 }
 
 async fn async_main() {

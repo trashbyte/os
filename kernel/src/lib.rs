@@ -99,7 +99,7 @@ pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
 /// Auto trait for test cases. Wraps them in print calls to output `module::function... [ok]` and whatnot.
 pub trait Testable {
     /// Run the test case
-    fn run(&self) -> ();
+    fn run(&self);
 }
 
 impl<T> Testable for T
@@ -234,10 +234,10 @@ pub fn init_pci() -> Vec<PciDeviceInfo> {
     let pci_infos = {
         let mut step = StartupStep::begin("Scanning for PCI devices");
         let pci_infos = tinypci::brute_force_scan();
-        if pci_infos.len() != 0 { step.ok(); }
+        if !pci_infos.is_empty() { step.ok(); }
         pci_infos
     };
-    if pci_infos.len() == 0 {
+    if pci_infos.is_empty() {
         both_println!("  Failed to find any PCI devices.");
     }
     for i in pci_infos.iter() {
@@ -284,7 +284,7 @@ pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
                 found_ahci_mem = Some(ahci_region);
                 step.ok();
             } else {
-                mmap_lock.add_region(region.clone());
+                mmap_lock.add_region(*region);
             }
         }
         for region in mmap_lock.iter() {
@@ -313,21 +313,20 @@ pub fn init_services() {
     step.ok();
 }
 
-pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) {
+pub unsafe fn ahci_init(pci_infos: &[PciDeviceInfo]) {
     crate::both_println!("Initializing AHCI controller...");
     let ahci_mem_region = AHCI_MEM_REGION.lock()
         .expect("called ahci_init without AHCI_MEM_REGION initialized")
         .range;
     let ahci_mem_range = ahci_mem_region.start_addr()..ahci_mem_region.end_addr();
-    for addr in ahci_mem_range.clone() {
+    for addr in ahci_mem_range {
         // zero out all AHCI memory
         unsafe { *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0; }
     }
     crate::both_println!("Zeroed AHCI host memory region");
 
     let ahci_controller_info = pci_infos.iter()
-        .filter(|x| { x.class() == PciClass::MassStorage })
-        .next()
+        .find(|x| { x.class() == PciClass::MassStorage })
         .expect("No AHCI controller found.");
 
     let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
@@ -345,6 +344,7 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
+    Zero = 0,
     Success = 0x10,
     Failed = 0x11,
 }

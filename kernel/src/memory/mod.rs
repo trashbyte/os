@@ -24,9 +24,10 @@ pub static AHCI_MEM_REGION: Mutex<Option<MemoryRegion>> = Mutex::new(None);
 
 /// Initialize a new OffsetPageTable.
 ///
-/// This function is unsafe because the caller must guarantee that the
-/// complete physical memory is mapped to virtual memory at the passed
-/// `physical_memory_offset`. Also, this function must be only called once
+/// # Safety
+///
+/// Caller must guarantee that the complete physical memory is mapped to virtual memory
+/// at the passed `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
 pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     use x86_64::registers::control::Cr3;

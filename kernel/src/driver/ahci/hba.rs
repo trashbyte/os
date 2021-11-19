@@ -296,7 +296,7 @@ impl HbaPort {
             cmdfis.featureh.write(0);
 
             unsafe { core::ptr::write_volatile(acmd.as_mut_ptr() as *mut [u8; 16], *cmd) };
-        }).ok_or(anyhow::anyhow!("ATAPI DMA start failed"))?;
+        }).ok_or_else(|| anyhow::anyhow!("ATAPI DMA start failed"))?;
         self.ata_stop(slot)
     }
 

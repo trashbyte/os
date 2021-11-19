@@ -1,5 +1,7 @@
 # [Untitled OS Project]
 
+[![build-x86_64](https://github.com/trashbyte/os/actions/workflows/x86_64.yaml/badge.svg?branch=master)](https://github.com/trashbyte/os/actions/workflows/x86_64.yaml)
+
 This project is the beginnings of a truly *modern* operating system. What I mean by that is, existing operating systems continue to use outdated systems and hacks for compatibility purposes. This project aims to create a new OS from scratch, which uses the best options available for each aspect of the system.
 
 For example:

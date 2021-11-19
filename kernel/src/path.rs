@@ -19,10 +19,10 @@ impl Path {
 
     pub fn iter(&self) -> impl Iterator<Item = &str> {
         // necessary to keep the compiler from complaining about mismatched closure types
-        let closure = |s: &&str| { s.len() > 0 };
+        let closure = |s: &&str| { !s.is_empty() };
         match self.is_absolute() {
-            true => { ["/"].iter().cloned().chain(self.0.split("/").filter(closure)) },
-            false => { [].iter().cloned().chain(self.0.split("/").filter(closure)) }
+            true => { ["/"].iter().cloned().chain(self.0.split('/').filter(closure)) },
+            false => { [].iter().cloned().chain(self.0.split('/').filter(closure)) }
         }
     }
 
@@ -44,15 +44,15 @@ impl Path {
         self.0.len() < 1
     }
     pub fn is_absolute(&self) -> bool {
-        !self.is_empty() && self.0.chars().nth(0).unwrap() == '/'
+        !self.is_empty() && self.0.starts_with('/')
     }
     pub fn is_relative(&self) -> bool {
-        !self.is_empty() && self.0.chars().nth(0).unwrap() != '/'
+        !self.is_empty() && !self.0.starts_with('/')
     }
     pub fn is_root(&self) -> bool {
         !self.is_empty() && self.iter().count() == 0
     }
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         self.0.clone()
     }
     pub fn as_str(&self) -> &str {
@@ -139,6 +139,9 @@ impl Display for Path {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self.0)
     }
+}
+impl Default for Path {
+    fn default() -> Self { Self::new() }
 }
 
 #[derive(Debug)]

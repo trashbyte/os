@@ -11,7 +11,7 @@ use spin::Mutex;
 use x86_64::instructions::interrupts;
 
 const BLANK_CHAR: ScreenChar = ScreenChar {
-    ascii_character: ' ' as u8,
+    ascii_character: b' ',
     color_code: ColorCode(0)
 };
 
@@ -240,10 +240,8 @@ impl Terminal {
                 self.scroll_row -= 1;
             }
         }
-        else {
-            if self.scroll_row < SCROLLBACK_LINES-1 {
-                self.scroll_row += 1;
-            }
+        else if self.scroll_row < SCROLLBACK_LINES-1 {
+            self.scroll_row += 1;
         }
         self.refresh();
     }

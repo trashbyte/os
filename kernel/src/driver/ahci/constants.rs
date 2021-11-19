@@ -4,6 +4,8 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
+#![allow(non_upper_case_globals)]
+
 // Size constants //////////////////////////////////////////////////////////////////////////////////
 
 pub const RECEIVED_FIS_SIZE: u64 = 256;
@@ -47,7 +49,6 @@ impl AtaCommand { pub fn as_u8(self) -> u8 { self as u8 } }
 // HBA control /////////////////////////////////////////////////////////////////////////////////////
 
 bitflags::bitflags! {
-    #[allow(non_upper_case_globals)]
     pub struct AhciGlobalHostControlBit: u32 {
         const AhciEnable      = (1 << 31);
         const InterruptEnable = (1 << 1);
@@ -57,7 +58,6 @@ bitflags::bitflags! {
 
 bitflags::bitflags! {
     /// Bitmasks for the per-port Command and Status register (PxCMD)
-    #[allow(non_upper_case_globals)]
     pub struct HbaPortCmdBit: u32 {
         const Start             = 1;
         const SpinUpDevice      = 1 << 1;

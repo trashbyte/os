@@ -97,11 +97,11 @@ impl Rtc {
 
     /// Get current time immediately (UNIX timestamp in seconds).
     ///
-    /// May yield invalid results if called during an RTC update.
-    /// Use `RTC::time()` for a safer (but slower) method.
+    /// # Safety
     ///
-    /// Marked unsafe not because it can violate memory safety,
-    /// but because it may return invalid values.
+    /// Marked unsafe not because it can violate memory safety, but because
+    /// it may return invalid values if called during an RTC update.
+    /// Use `RTC::time()` for a safer (but slower) method.
     pub unsafe fn time_immediate(&mut self) -> u64 {
         let mut second = self.read(RtcRegister::Seconds) as usize;
         let mut minute = self.read(RtcRegister::Minutes) as usize;
@@ -179,4 +179,8 @@ impl Rtc {
             }
         }
     }
+}
+
+impl Default for Rtc {
+    fn default() -> Self { Self::new() }
 }

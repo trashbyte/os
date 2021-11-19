@@ -1,0 +1,55 @@
+name: build-x86_64
+on: [push]
+jobs:
+  build-x86_64:
+    name: Build, run, and test for x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustc, rust-std, rust-src, cargo, rust-docs, rustfmt, llvm-tools-preview
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install qemu-system-x86
+      - name: "Print QEMU Version"
+        run: qemu-system-x86_64 --version
+      - name: Install bootimage
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: bootimage
+      - run: dd if=/dev/urandom of=fda.img bs=1440KB count=1
+      - run: dd if=/dev/zero of=hdb.img bs=50MB count=1
+      - name: Run `cargo build`
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+      - run: chmod +x ci_run.sh
+      - run: cd kernel
+      - name: Run `cargo run` with CI exit
+        run: ./ci_run.sh
+      - name: Run `cargo test`
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p kernel
+  clippy:
+    name: Run Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          override: true
+          components: rustc, rust-std, cargo, rust-src, clippy
+      - run: export CLIPPY_DISABLE_DOCS_LINKS=1
+      - name: Run `cargo clippy`
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy

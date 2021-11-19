@@ -28,8 +28,8 @@ const CHARACTER_CODES: [char; 256] = [
 
 pub fn decode_slice(chars: &[u8], policy: Option<InvalidCharPolicy>) -> Result<String, EncodingError> {
     let mut result = String::new();
-    for i in 0..chars.len() {
-        match decode_char(CharacterType::SingleByte(chars[i]), &policy) {
+    for char in chars {
+        match decode_char(CharacterType::SingleByte(*char), &policy) {
             EncodingResult::Ok(c) => result.push(c),
             EncodingResult::Err(e) => return Err(e),
             EncodingResult::Ignore => {} // do nothing
@@ -39,6 +39,10 @@ pub fn decode_slice(chars: &[u8], policy: Option<InvalidCharPolicy>) -> Result<S
     Ok(result)
 }
 
+/// # Safety
+///
+/// `chars` must be a pointer to a valid string `len` characters long.
+/// Otherwise, invalid memory access may occur.
 pub unsafe fn decode_ptr(chars: *const u8, len: usize, policy: Option<InvalidCharPolicy>) -> Result<String, EncodingError> {
     let mut result = String::new();
     for i in 0..len {

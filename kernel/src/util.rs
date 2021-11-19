@@ -8,7 +8,6 @@
 
 use alloc::string::String;
 use core::fmt::{Display, Formatter, Error};
-use alloc::vec::Vec;
 use alloc::format;
 use x86_64::VirtAddr;
 use crate::serial_print;
@@ -39,12 +38,12 @@ pub fn format_u32_as_bin_spaced(i: u32) -> String {
 
 /// Trait for types that can be read from byte buffers.
 pub trait BufferRead {
-    fn read_from_buffer(buffer: &Vec<u8>) -> Self;
+    fn read_from_buffer(buffer: &[u8]) -> Self;
 }
 
 /// Trait for types that can be written to byte buffers.
 pub trait BufferWrite {
-    fn write_to_buffer(&self, buffer: &mut Vec<u8>);
+    fn write_to_buffer(&self, buffer: &mut [u8]);
 }
 
 /// Trait for types that can be read from and written to byte buffers.
@@ -124,7 +123,7 @@ impl UUID {
     pub fn parse(_s: String) -> Self {
         unimplemented!();
     }
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         let mut uuid_str = String::new();
         for (i, b) in self.0.iter().enumerate() {
             uuid_str.push_str(&format!("{:02X}", b));
@@ -141,7 +140,7 @@ impl UUID {
 }
 impl Display for UUID {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }
 
@@ -166,14 +165,14 @@ impl<T> DoubleArrayQueue<T> {
     }
 
     pub fn get(&self) -> &ArrayQueue<T> {
-        return match self.using_a.load(Ordering::Relaxed) {
+        match self.using_a.load(Ordering::Relaxed) {
             true => &self.a,
             false => &self.b,
         }
     }
 
     pub fn get_alt(&self) -> &ArrayQueue<T> {
-        return match self.using_a.load(Ordering::Relaxed) {
+        match self.using_a.load(Ordering::Relaxed) {
             true => &self.b,
             false => &self.a,
         }

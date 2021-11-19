@@ -39,7 +39,7 @@ pub enum Partition {
     GPT(GptPartition),
 }
 impl Partition {
-    pub fn read_bytes(&self, addr_range: Range<u64>, buffer: &mut [u8]) {
+    pub fn read_bytes(&self, _addr_range: Range<u64>, _buffer: &mut [u8]) {
         // TODO: there has to be a better way to do this
         // match &self {
         //     Partition::GPT(part) => part.media.read_bytes(addr_range, buffer),

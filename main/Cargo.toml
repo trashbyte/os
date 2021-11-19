@@ -4,6 +4,9 @@ version = "0.0.1"
 authors = ["trashbyte <github@trashbyte.io>"]
 edition = "2018"
 
+[features]
+ci = [] # auto-exit for CI builds
+
 [dependencies]
 kernel = { path = "../kernel" }
 
@@ -28,15 +31,11 @@ run-command = [
     "-drive", "format=raw,file={}",
     "-device", "ahci,id=ahci",
     "-device", "ide-hd,bus=ahci.0,drive=vdisk",
-    "-serial", "stdio"
-]
-run-args = [
+    "-serial", "stdio",
     "-drive", "file=hdb.img,if=none,format=raw,id=vdisk",
     "-fda", "fda.img",
 ]
 test-args = [
-    "-drive", "file=..\\hdb.img,if=none,format=raw,id=vdisk",
-    "-fda", "..\\fda.img",
     "-display", "none",
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"
 ]

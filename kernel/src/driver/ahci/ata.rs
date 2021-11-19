@@ -42,7 +42,7 @@ impl AtaDisk {
     fn request(&mut self, block: u64, mut buffer_kind: BufferKind<'_>) -> Result<Option<usize>, anyhow::Error> {
         let (write, address, total_sectors) = match buffer_kind {
             BufferKind::Read(ref buffer) => (false, buffer.as_ptr() as usize, buffer.len()/512),
-            BufferKind::Write(ref buffer) => (true, buffer.as_ptr() as usize, buffer.len()/512),
+            BufferKind::Write(buffer) => (true, buffer.as_ptr() as usize, buffer.len()/512),
         };
 
         //TODO: Go back to interrupt magic
@@ -99,7 +99,7 @@ impl AtaDisk {
                     request.total_sectors - request.sector
                 };
 
-                if let BufferKind::Write(ref buffer) = buffer_kind {
+                if let BufferKind::Write(buffer) = buffer_kind {
                     unsafe { ptr::copy(buffer.as_ptr().add(request.sector * 512), self.buf.as_mut_ptr(), sectors * 512); }
                 }
 

@@ -75,9 +75,7 @@ impl HoleList {
             size = Self::min_size();
         }
         let size = align_up(size, mem::align_of::<Hole>());
-        let layout = Layout::from_size_align(size, layout.align()).unwrap();
-
-        layout
+        Layout::from_size_align(size, layout.align()).unwrap()
     }
 
     /// Searches the list for a big enough hole.
@@ -90,6 +88,7 @@ impl HoleList {
     ///
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
+    #[allow(clippy::result_unit_err)]
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
         let aligned_layout = Self::align_layout(layout);
 
@@ -103,14 +102,16 @@ impl HoleList {
 
     /// Frees the allocation given by `ptr` and `layout`.
     ///
+    /// This function walks the list and inserts the given block at the correct place. If the freed
+    /// block is adjacent to another free block, the blocks are merged again.
+    /// This operation is in `O(n)` since the list needs to be sorted by address.
+    ///
+    /// # Safety
+    ///
     /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
     /// identical layout. Undefined behavior may occur for invalid arguments.
     /// The function performs exactly the same layout adjustments as [`allocate_first_fit`] and
     /// returns the aligned layout.
-    ///
-    /// This function walks the list and inserts the given block at the correct place. If the freed
-    /// block is adjacent to another free block, the blocks are merged again.
-    /// This operation is in `O(n)` since the list needs to be sorted by address.
     ///
     /// [`allocate_first_fit`]: HoleList::allocate_first_fit
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
@@ -231,8 +232,8 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
             addr: aligned_hole.addr,
             size: required_size,
         },
-        front_padding: front_padding,
-        back_padding: back_padding,
+        front_padding,
+        back_padding,
     })
 }
 
@@ -247,7 +248,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<HoleInf
         let allocation: Option<Allocation> = previous
             .next
             .as_mut()
-            .and_then(|current| split_hole(current.info(), layout.clone()));
+            .and_then(|current| split_hole(current.info(), layout));
         match allocation {
             Some(allocation) => {
                 // link the front/back padding
@@ -364,7 +365,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // after:   ___XXX__FFFF___    where F is the freed block
 
                 let new_hole = Hole {
-                    size: size,
+                    size,
                     next: hole.next.take(), // the reference to the Y block (if it exists)
                 };
                 // write the new hole to the freed memory
