@@ -13,8 +13,11 @@ use alloc::vec::Vec;
 use alloc::boxed::Box;
 use crate::PHYS_MEM_OFFSET;
 
+/// Types related to the AHCI HBA (Host Bus Adapter)
 pub mod hba;
+/// Types related to the various types of FIS (Frame Information Structure)
 pub mod fis;
+/// Constants and enums for AHCI values
 pub mod constants;
 /// `Disk` implementation for (S)ATA disks
 pub mod ata;
@@ -34,6 +37,7 @@ pub trait Disk {
     fn block_length(&mut self) -> Result<u32, anyhow::Error>;
 }
 
+/// Initialize the HBA and scan for disks
 pub fn init(hba_mem_base: PhysAddr) -> (&'static mut HbaMemory, Vec<Box<dyn Disk>>) {
     let hba_mem = unsafe { &mut *((hba_mem_base.as_u64() + PHYS_MEM_OFFSET) as *mut HbaMemory) };
     hba_mem.init();

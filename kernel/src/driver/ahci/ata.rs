@@ -135,5 +135,5 @@ impl Disk for AtaDisk {
         self.request(block, BufferKind::Write(buffer))
     }
 
-    fn block_length(&mut self) -> Option<u32> { Some(512) }
+    fn block_length(&mut self) -> Result<u32, anyhow::Error> { Ok(512) }
 }

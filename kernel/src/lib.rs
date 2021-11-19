@@ -334,7 +334,7 @@ pub unsafe fn ahci_init(pci_infos: &Vec<PciDeviceInfo>) {
     let (_hba_mem, mut disks) = ahci::init(ahci_hba_addr);
 
     let mut buf = Box::new([69u8; 512]); // allocate on the heap
-    disks[0].read(0, buf.as_mut());
+    match disks[0].read(0, buf.as_mut()) { _ => {} }
     for i in 0..32 {
         crate::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
     }

@@ -46,16 +46,18 @@ impl AtaCommand { pub fn as_u8(self) -> u8 { self as u8 } }
 
 // HBA control /////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug)]
-pub enum AhciGlobalHostControlBit {
-    AhciEnable      = (1 << 31),
-    InterruptEnable = (1 << 1),
-    HbaReset        = (1 << 0),
+bitflags::bitflags! {
+    #[allow(non_upper_case_globals)]
+    pub struct AhciGlobalHostControlBit: u32 {
+        const AhciEnable      = (1 << 31);
+        const InterruptEnable = (1 << 1);
+        const HbaReset        = (1 << 0);
+    }
 }
 
-#[allow(non_upper_case_globals)]
 bitflags::bitflags! {
     /// Bitmasks for the per-port Command and Status register (PxCMD)
+    #[allow(non_upper_case_globals)]
     pub struct HbaPortCmdBit: u32 {
         const Start             = 1;
         const SpinUpDevice      = 1 << 1;
@@ -130,8 +132,8 @@ pub enum HbaPortPowerState {
     ReservedValue = 0xFF
 }
 
-#[allow(non_upper_case_globals)]
 bitflags::bitflags !{
+    #[allow(non_upper_case_globals)]
     pub struct HbaPortPwrTransitionDisable: u32 {
         /// No transition restrictions
         const None = 0;

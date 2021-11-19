@@ -19,6 +19,9 @@ use x86_64::{VirtAddr};
 use kernel::{MemoryInitResults, both_println};
 use kernel::time::DateTimeError;
 use kernel::memory::AHCI_MEM_REGION;
+use core::time::Duration;
+use kernel::task::sleep::sleep;
+use x86_64::instructions::port::Port;
 //use pest::Parser;
 
 
@@ -47,6 +50,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     kernel::acpi::init();
     kernel::arch::interrupts::late_init_interrupts();
+
+    // set PIT interval to 100 Hz
+    unsafe {
+        // channel 0, low+high byte, mode 2, binary mode
+        Port::<u8>::new(0x43).write(0b00110100);
+        // set channel 0 interval to 11932 (0x2E9C)
+        let mut port = Port::<u8>::new(0x40);
+        port.write(0x9C);
+        port.write(0x2E);
+    }
 
     let pci_infos = kernel::init_pci();
     kernel::init_services();
@@ -87,9 +100,38 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
-    let mut executor = kernel::task::executor::Executor::new();
-    executor.spawn(kernel::task::Task::new(kernel::task::keyboard::process_scancodes()));
-    executor.run() // -> !
+    let exec = kernel::task::executor::Executor::init();
+    exec.run(kernel::task::Task::new(async_main())) // -> !
+}
+
+async fn async_main() {
+    let executor = kernel::task::executor::GLOBAL_EXECUTOR.get().unwrap().clone();
+    executor.spawn(kernel::task::Task::new(kernel::task::keyboard::process_scancodes())).await;
+    executor.spawn(kernel::task::Task::new(sleep_test())).await;
+    executor.spawn(kernel::task::Task::new(sleep_test2())).await;
+    executor.spawn(kernel::task::Task::new(sleep_test3())).await;
+    both_println!("async_main exit");
+}
+
+async fn sleep_test() {
+    loop {
+        both_println!("A");
+        sleep(Duration::from_millis(1000)).await;
+    }
+}
+
+async fn sleep_test2() {
+    loop {
+        both_println!("B");
+        sleep(Duration::from_millis(500)).await;
+    }
+}
+
+async fn sleep_test3() {
+    loop {
+        both_println!("C");
+        sleep(Duration::from_millis(250)).await;
+    }
 }
 
 // #[derive(Parser)]

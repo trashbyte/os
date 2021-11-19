@@ -7,11 +7,10 @@
 
 use x86_64::instructions::port::Port;
 
-
 pub fn init_rtc() {
     let mut step = crate::StartupStep::begin("Initializing real-time clock");
     let mut rtc = Rtc::new();
-    (*crate::time::TIME_START.lock()).0 = rtc.time();
+    *crate::time::TIME_START_SECS.lock() = rtc.time();
     step.ok();
 }
 
@@ -110,7 +109,7 @@ impl Rtc {
         let mut day = self.read(RtcRegister::DayOfMonth) as usize;
         let mut month = self.read(RtcRegister::Month) as usize;
         let mut year = self.read(RtcRegister::Year) as usize;
-        let century = 20; // remember to update this in 80 years lol
+        let century = 20; // remember to update this in 8 decades lol
         let register_b = self.read(RtcRegister::StatusB);
 
         // convert BCD values to binary if necessary

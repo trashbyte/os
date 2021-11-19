@@ -134,7 +134,7 @@ impl HbaPort {
         self.sata_control.write(sctl
             | (HbaPortPwrTransitionDisable::PartialDisable
             |  HbaPortPwrTransitionDisable::SlumberDisable
-            |  HbaPortPwrTransitionDisable::DevSleepDisable));
+            |  HbaPortPwrTransitionDisable::DevSleepDisable).bits());
 
         // Power on and spin up device
         self.command_and_status.write(self.command_and_status.read() | 1 << 2 | 1 << 1);
@@ -400,7 +400,7 @@ pub struct HbaMemory {
 
 impl HbaMemory {
     pub fn init(&mut self) {
-        self.global_host_control.write(1 << 31 | 1 << 1);
+        self.global_host_control.write((AhciGlobalHostControlBit::AhciEnable | AhciGlobalHostControlBit::InterruptEnable).bits());
 
         crate::serial_println!("   - AHCI CAP {:X} GHC {:X} IS {:X} PI {:X} VS {:X} CAP2 {:X} BOHC {:X}",
             self.capabilities.read(), self.global_host_control.read(), self.interrupt_status.read(), self.ports_impl.read(),

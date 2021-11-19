@@ -12,6 +12,8 @@ use alloc::vec::Vec;
 use alloc::format;
 use x86_64::VirtAddr;
 use crate::serial_print;
+use crossbeam::queue::ArrayQueue;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Simple infinite loop using the x86 `hlt` instruction.
 pub fn halt_loop() -> ! {
@@ -143,10 +145,37 @@ impl Display for UUID {
     }
 }
 
-pub fn sleep(ms: u32) {
-    let target_ticks = crate::arch::interrupts::ticks() + ms as u64;
-    loop {
-        for _ in 0..1000 {}
-        if crate::arch::interrupts::ticks() > target_ticks { return; }
+#[derive(Debug)]
+pub struct DoubleArrayQueue<T> {
+    a: ArrayQueue<T>,
+    b: ArrayQueue<T>,
+    using_a: AtomicBool
+}
+
+impl<T> DoubleArrayQueue<T> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            a: ArrayQueue::new(capacity),
+            b: ArrayQueue::new(capacity),
+            using_a: AtomicBool::new(true)
+        }
+    }
+
+    pub fn swap(&self) {
+        self.using_a.fetch_xor(true, Ordering::Relaxed);
+    }
+
+    pub fn get(&self) -> &ArrayQueue<T> {
+        return match self.using_a.load(Ordering::Relaxed) {
+            true => &self.a,
+            false => &self.b,
+        }
+    }
+
+    pub fn get_alt(&self) -> &ArrayQueue<T> {
+        return match self.using_a.load(Ordering::Relaxed) {
+            true => &self.b,
+            false => &self.a,
+        }
     }
 }

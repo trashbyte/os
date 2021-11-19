@@ -19,6 +19,9 @@ use crate::util::halt_loop;
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
+// TODO: make a non-synchronized, constant, static bool for whether
+// ASICs are present or not. Unsafe set via *const to *mut once
+// in the interrupt controller init
 pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
@@ -268,15 +271,11 @@ extern "x86-interrupt" fn disk_irq_handler(_frame: InterruptStackFrame) {
     }
 }
 
-static mut TICKS: u64 = 0;
-pub fn ticks() -> u64 { unsafe { TICKS } }
-
 extern "x86-interrupt" fn timer_interrupt_handler(_frame: InterruptStackFrame) {
-    unsafe {
-        TICKS += 5;
-        // if TICKS % 1000 == 0 {
-        //     print!(".");
-        // }
+    crate::time::pit_tick();
+    // might not be initialized yet
+    if let Some(exc) = crate::task::executor::GLOBAL_EXECUTOR.get() {
+        exc.sleep_tick_set();
     }
 
     match LOCAL_APIC.lock().as_mut() {
