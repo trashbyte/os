@@ -18,8 +18,8 @@ use bootloader::BootInfo;
 use x86_64::{VirtAddr};
 use kernel::{MemoryInitResults, both_println};
 use kernel::time::DateTimeError;
-use kernel::memory::AHCI_MEM_REGION;
 use x86_64::instructions::port::Port;
+use kernel::task::Task;
 //use pest::Parser;
 
 
@@ -39,12 +39,12 @@ fn panic(info: &PanicInfo) -> ! {
 bootloader::entry_point!(kernel_main);
 /// Main entry point for the kernel, called by the bootloader
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    kernel::build_memory_map(boot_info);
+    kernel::init_memory_map(boot_info);
     kernel::arch::gdt::init();
     kernel::arch::interrupts::early_init_interrupts();
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = kernel::memory_init(phys_mem_offset);
+    let MemoryInitResults { mapper: _mapper, frame_allocator: _frame_allocator } = kernel::init_memory(phys_mem_offset);
 
     kernel::acpi::init();
     kernel::arch::interrupts::late_init_interrupts();
@@ -59,8 +59,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         port.write(0x2E);
     }
 
-    let pci_infos = kernel::init_pci();
-    kernel::init_services();
     kernel::arch::rtc::init_rtc();
 
     match kernel::time::get_current_time() {
@@ -79,22 +77,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         }
     }
 
-    unsafe { kernel::ahci_init(&pci_infos) };
-    let found_ahci_mem = AHCI_MEM_REGION.lock().unwrap().range;
-    both_println!("AHCI memory initialized at {:x}..{:x}", found_ahci_mem.start_addr(), found_ahci_mem.end_addr());
-
-   //
-   //  // TODO: [HACK] there's gotta be a better way to do a wait here
-   //  for _ in 0..1000000 {}
-   //  unsafe {
-   //     let addr = ahci_driver.ports[0].as_mut().unwrap().cmd_list_addr.as_u64() + phys_mem_offset.as_u64();
-   //     debug_dump_memory(VirtAddr::new(addr), 0x20);
-   // }
-
-    kernel::parse_aml();
-
-    both_println!("Boot complete!\n");
-
     #[cfg(test)]
     test_main();
 
@@ -107,7 +89,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
 async fn async_main() {
     let executor = kernel::task::executor::GLOBAL_EXECUTOR.get().unwrap().clone();
-    executor.spawn(kernel::task::Task::new(kernel::task::keyboard::process_scancodes())).await;
+    executor.spawn(Task::new(kernel::init_pci())).await;
+    executor.spawn(Task::new(unsafe { kernel::init_ahci() })).await;
+    executor.spawn(Task::new(kernel::parse_aml())).await;
+    executor.spawn(Task::new(kernel::service::DiskService::init())).await;
+    executor.spawn(Task::new(kernel::task::keyboard::process_scancodes())).await;
 
     both_println!("async_main exit");
     (*kernel::shell::SHELL.lock()).submit();

@@ -57,6 +57,27 @@ impl Shell {
             if s == "shutdown" {
                 crate::shutdown();
             }
+            else if s == "list disks" {
+                let mut loops = 0;
+                let lock = loop {
+                    if let Some(lock) = crate::service::DISK_SERVICE.try_lock() {
+                        break lock
+                    }
+                    loops += 1;
+                    if loops == 10 {
+                        print!("Failed to lock disk service.");
+                        return
+                    }
+                };
+                match lock.as_ref() {
+                    Some(srv) => {
+                        for (id, disk) in srv.iter() {
+                            println!("Disk {}  type: {:?}  size: {}", id, disk.kind(), disk.size().unwrap_or(0));
+                        }
+                    },
+                    None => print!("Disk service is not initialized.")
+                }
+            }
            //  if s == "ls" {
            //      unsafe {
            //          let vfs: &VFS = &(*crate::fs::vfs::GLOBAL_VFS.as_ref().unwrap().lock());

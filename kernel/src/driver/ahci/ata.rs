@@ -8,6 +8,7 @@ use core::ptr;
 use super::hba::HbaPort;
 use super::Disk;
 use alloc::boxed::Box;
+use crate::driver::ahci::DiskType;
 
 enum BufferKind<'a> {
     Read(&'a mut [u8]),
@@ -125,7 +126,8 @@ impl AtaDisk {
 
 impl Disk for AtaDisk {
     fn id(&self) -> usize { self.id }
-    fn size(&mut self) -> Option<u64> { self.size }
+    fn kind(&self) -> DiskType { DiskType::SATA }
+    fn size(&self) -> Option<u64> { self.size }
 
     fn read(&mut self, block: u64, buffer: &mut [u8]) -> Result<Option<usize>, anyhow::Error> {
         self.request(block, BufferKind::Read(buffer))

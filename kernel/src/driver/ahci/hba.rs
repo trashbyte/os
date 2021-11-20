@@ -374,7 +374,7 @@ pub struct HbaMemory {
     pub global_host_control: Volatile<u32>,
     /// 0x08, Interrupt status
     pub interrupt_status: Volatile<u32>,
-    /// 0x0C, Port implemented
+    /// 0x0C, Ports implemented
     pub ports_impl: Volatile<u32>,
     /// 0x10, Version
     pub version: Volatile<u32>,

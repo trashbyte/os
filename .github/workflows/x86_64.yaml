@@ -2,6 +2,7 @@ name: build-x86_64
 on: [push]
 jobs:
   clean_amend:
+    name: Clean up `--amend`ed workflow run results
     runs-on: ubuntu-latest
     steps:
     - name: Clean `--amend`ed run results

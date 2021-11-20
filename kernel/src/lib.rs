@@ -68,6 +68,8 @@ pub mod path;
 pub mod service;
 /// Interactive shell system and parser
 pub mod shell;
+/// Syncrhonization primitives
+pub mod sync;
 /// General utilities
 pub mod util;
 /// Text-mode VGA output
@@ -93,6 +95,8 @@ use alloc::boxed::Box;
 use crate::acpi::{AML_CONTEXT, AmlHandler, ACPI_TABLES};
 use aml::{AmlContext, DebugVerbosity};
 use spin::Mutex;
+use crate::sync::AsyncMutex;
+use core::sync::atomic::Ordering;
 
 /// Start address where physical memory is identity mapped in virtual memory
 pub const PHYS_MEM_OFFSET: u64 = 0x100000000000;
@@ -220,26 +224,24 @@ pub struct MemoryInitResults {
     pub frame_allocator: BootInfoFrameAllocator,
 }
 
-pub fn memory_init(phys_mem_offset: VirtAddr) -> MemoryInitResults {
+pub fn init_memory(phys_mem_offset: VirtAddr) -> MemoryInitResults {
     let mut step = StartupStep::begin("Initializing heap");
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init() };
     memory::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
 
-    *memory::HAVE_ALLOC.lock() = true;
+    memory::HAVE_ALLOC.store(true, Ordering::Relaxed);
 
     step.ok();
     MemoryInitResults { mapper, frame_allocator }
 }
 
-pub fn init_pci() -> Vec<PciDeviceInfo> {
-    let pci_infos = {
-        let mut step = StartupStep::begin("Scanning for PCI devices");
-        let pci_infos = tinypci::brute_force_scan();
-        if !pci_infos.is_empty() { step.ok(); }
-        pci_infos
-    };
+pub static PCI_DEVICES: AsyncMutex<Vec<PciDeviceInfo>> = AsyncMutex::new(Vec::new());
+
+pub async fn init_pci() {
+    both_println!("Scanning for PCI devices");
+    let mut pci_infos = tinypci::brute_force_scan();
     if pci_infos.is_empty() {
         both_println!("  Failed to find any PCI devices.");
     }
@@ -259,10 +261,14 @@ pub fn init_pci() -> Vec<PciDeviceInfo> {
             }
         }
     }
-    pci_infos
+    let mut lock = PCI_DEVICES.lock().await;
+    lock.clear();
+    lock.append(&mut pci_infos);
+    drop(lock);
+    both_println!("PCI scan done.");
 }
 
-pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
+pub fn init_memory_map(boot_info: &'static bootloader::BootInfo) {
     // search memory map provided by bootloader for a free memory region for AHCI
     let mut found_ahci_mem = None;
     {
@@ -299,24 +305,19 @@ pub fn build_memory_map(boot_info: &'static bootloader::BootInfo) {
     *AHCI_MEM_REGION.lock() = Some(found_ahci_mem);
 }
 
-pub fn init_services() {
-    let mut step = StartupStep::begin("Initializing disk service");
-    // let mut disk_srv = DiskService::new();
-    // disk_srv.init();
-    // let part = MbrPartition {
-    //     media: disk_srv.get(2).unwrap(),
+//pub fn init_fs_service() {
+    // let part = fs::partition::MbrPartition {
+    //     //media: disk_srv.get(2).unwrap(),
     //     first_sector: 0,
     //     last_sector: 0,
-    //     partition_type: PartitionType::Filesystem
+    //     partition_type: fs::partition::PartitionType::Filesystem
     // };
-    // *crate::service::DISK_SERVICE.lock() = Some(disk_srv);
     // let _block_dev = Arc::new(BlockDevice::new(BlockDeviceMedia::Partition(Partition::MBR(part))));
     //let fs = unsafe { Arc::new(Ext2Filesystem::read_from(&block_dev).unwrap()) };
     //unsafe { *crate::fs::vfs::GLOBAL_VFS.lock() = Some(VFS::init(fs)); }
-    step.ok();
-}
+//}
 
-pub unsafe fn ahci_init(pci_infos: &[PciDeviceInfo]) {
+pub async unsafe fn init_ahci() {
     crate::both_println!("Initializing AHCI controller...");
     let ahci_mem_region = AHCI_MEM_REGION.lock()
         .expect("called ahci_init without AHCI_MEM_REGION initialized")
@@ -326,27 +327,41 @@ pub unsafe fn ahci_init(pci_infos: &[PciDeviceInfo]) {
         // zero out all AHCI memory
         unsafe { *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0; }
     }
-    crate::both_println!("Zeroed AHCI host memory region");
+    both_println!("AHCI memory initialized at {:x}..{:x}", ahci_mem_region.start_addr(), ahci_mem_region.end_addr());
 
-    let ahci_controller_info = pci_infos.iter()
+    let mut i = 0;
+    let pci_lock = loop {
+        let pci_lock = PCI_DEVICES.lock().await;
+        if !pci_lock.is_empty() { break pci_lock }
+        drop(pci_lock);
+        i += 1;
+        if i >= 10 {
+            panic!("Exhausted all retries trying to get PCI devices");
+        }
+    };
+
+    let ahci_controller_info = pci_lock.iter()
         .find(|x| { x.class() == PciClass::MassStorage })
         .expect("No AHCI controller found.");
 
     let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
-    let (_hba_mem, mut _disks) = ahci::init(ahci_hba_addr);
-
-    // let mut buf = Box::new([69u8; 512]); // allocate on the heap
-    // match disks[0].read(0, buf.as_mut()) { _ => {} }
-    // for i in 0..32 {
-    //     crate::serial_println!("{}  {}  {}  {}  {}  {}  {}  {}", buf[i*4],buf[i*4+1],buf[i*4+2],buf[i*4+3],buf[i*4+4],buf[i*4+5],buf[i*4+6],buf[i*4+7]);
-    // }
+    ahci::init(ahci_hba_addr).await;
 }
 
-pub fn parse_aml() {
+pub async fn parse_aml() {
     AML_CONTEXT.try_init_once(|| {
         Mutex::new(AmlContext::new(Box::new(AmlHandler {}), DebugVerbosity::Scopes))
     }).expect("parse_aml() can only be called once");
-    let acpi = ACPI_TABLES.get().unwrap();
+
+    let mut loops = 0;
+    let acpi = loop {
+        let tables = ACPI_TABLES.get();
+        if let Some(acpi) = tables { break acpi }
+        loops += 1;
+        if loops == 10 {
+            panic!("Exhausted all retries trying to get ACPI tables");
+        }
+    };
     let mut ctx = AML_CONTEXT.get().unwrap().lock();
     if let Some(dsdt) = acpi.dsdt.as_ref() {
         let ptr = (dsdt.address as u64 + PHYS_MEM_OFFSET) as *const u8;

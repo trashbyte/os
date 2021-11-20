@@ -12,13 +12,13 @@ use bootloader::bootinfo::{MemoryMap, MemoryRegionType, MemoryRegion};
 use lazy_static::lazy_static;
 use spin::Mutex;
 use bitflags::_core::sync::atomic::AtomicU64;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{Ordering, AtomicBool};
 
 lazy_static! {
     pub static ref GLOBAL_MEMORY_MAP: Mutex<MemoryMap> = Mutex::new(MemoryMap::new());
 }
 
-pub static HAVE_ALLOC: Mutex<bool> = Mutex::new(false);
+pub static HAVE_ALLOC: AtomicBool = AtomicBool::new(false);
 pub static AHCI_MEM_REGION: Mutex<Option<MemoryRegion>> = Mutex::new(None);
 
 

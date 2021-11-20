@@ -43,8 +43,7 @@ macro_rules! println {
 #[macro_export]
 macro_rules! both_print {
     ($($arg:tt)*) => {
-        $crate::vga_buffer::_print(format_args!($($arg)*));
-        $crate::serial_print!("{}", format_args!($($arg)*));
+        $crate::vga_buffer::_print_both(format_args!($($arg)*))
     }
 }
 
@@ -59,7 +58,24 @@ pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
 
     interrupts::without_interrupts(|| {
-        TERMINAL.lock().write_fmt(args).unwrap();
+        TERMINAL.lock().write_fmt(args)
+            .expect("Printing to terminal failed");
+    });
+}
+
+#[doc(hidden)]
+pub fn _print_both(args: fmt::Arguments<'_>) {
+    use core::fmt::Write;
+
+    interrupts::without_interrupts(|| {
+        crate::device::serial::SERIAL1
+            .lock()
+            .write_fmt(args)
+            .expect("Printing to serial failed");
+    });
+    interrupts::without_interrupts(|| {
+        TERMINAL.lock().write_fmt(args)
+            .expect("Printing to terminal failed");
     });
 }
 

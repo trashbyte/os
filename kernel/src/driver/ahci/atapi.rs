@@ -11,6 +11,7 @@ use byteorder::{ByteOrder, BigEndian};
 use super::hba::HbaPort;
 use super::Disk;
 use alloc::boxed::Box;
+use crate::driver::ahci::DiskType;
 
 const SCSI_READ_CAPACITY: u8 = 0x25;
 const SCSI_READ10: u8 = 0x28;
@@ -19,7 +20,7 @@ const SCSI_READ10: u8 = 0x28;
 pub struct AtapiDisk {
     id: usize,
     port: &'static mut HbaPort,
-    size: u64,
+    size: Option<u64>,
     // Just using the same buffer size as DiskATA
     // Although the sector size is different (and varies)
     buf: Box<[u8; 256 * 512]>
@@ -31,7 +32,7 @@ impl AtapiDisk {
 
         port.init(id as u8);
 
-        let size = unsafe { port.identify_packet().unwrap_or(0) };
+        let size = unsafe { port.identify_packet() };
 
         Ok(AtapiDisk {
             id,
@@ -57,15 +58,16 @@ impl AtapiDisk {
 }
 
 impl Disk for AtapiDisk {
-    fn id(&self) -> usize {
-        self.id
-    }
+    fn id(&self) -> usize { self.id }
+    fn kind(&self) -> DiskType { DiskType::SATAPI }
 
-    fn size(&mut self) -> Option<u64> {
-        match self.read_capacity() {
-            Ok((blk_count, blk_size)) => Some(blk_count as u64 * blk_size as u64),
-            Err(_) => None
-        }
+    fn size(&self) -> Option<u64> {
+        self.size
+        // TODO: query dynamically
+        // match self.read_capacity() {
+        //     Ok((blk_count, blk_size)) => Some(blk_count as u64 * blk_size as u64),
+        //     Err(_) => None
+        // }
     }
 
     fn read(&mut self, block: u64, buffer: &mut [u8]) -> Result<Option<usize>, anyhow::Error> {
