@@ -4,27 +4,23 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
-// TODO: check for redundancy with AHCI controller
-
 //use crate::driver::ata::{AtaDrive, ide_identify};
 //use crate::fs::ext2::Ext2Filesystem;
 use hashbrown::HashMap;
-use alloc::sync::Arc;
-use crate::sync::AsyncMutex;
-use crate::driver::ahci::Disk;
+use spin::Mutex;
+use crate::device::physical::SyncDisk;
 
-
-pub static DISK_SERVICE: AsyncMutex<Option<DiskService>> = AsyncMutex::new(None);
+pub static DISK_SERVICE: Mutex<Option<DiskService>> = Mutex::new(None);
 //pub static ref FS_SERVICE: Mutex<FsService> = Mutex::new(FsService::new());
 
 
 pub struct DiskService {
-    disks: HashMap<u32, Arc<dyn Disk>, ahash::RandomState>,
+    disks: HashMap<u32, SyncDisk, ahash::RandomState>,
     next_id: u32,
 }
 impl DiskService {
     pub async fn init() {
-        if DISK_SERVICE.lock().await.is_some() {
+        if DISK_SERVICE.lock().is_some() {
             crate::both_println!("ERROR: Disk service is already initialized");
         }
         // TODO: IDE drives
@@ -41,34 +37,25 @@ impl DiskService {
 
         let mut next_id = 0;
         let mut disks = HashMap::default();
-        let mut loops = 0;
-        let disk_lock = loop {
-            let disk_lock = crate::ahci::AHCI_DISKS.lock().await;
-            if disk_lock.is_some() { break disk_lock }
-            drop(disk_lock);
-            loops += 1;
-            if loops == 10 {
-                panic!("Exhausted all retries trying to get disks from AHCI_DISKS");
-            }
-        };
-        for disk in disk_lock.as_ref().unwrap().iter() {
+        let scanned_disks = crate::driver::ahci::scan_disks().await;
+        for disk in scanned_disks.iter() {
             disks.insert(next_id, disk.clone());
             next_id += 1;
         }
 
-        *DISK_SERVICE.lock().await = Some(Self { disks, next_id });
+        *DISK_SERVICE.lock() = Some(Self { disks, next_id });
         crate::both_println!("Disk service initialized");
     }
-    pub fn get(&self, id: u32) -> Option<Arc<dyn Disk>> {
+    pub fn get(&self, id: u32) -> Option<SyncDisk> {
         match self.disks.get(&id) {
             None => None,
             Some(dt) => Some(dt.clone())
         }
     }
-    pub fn iter(&self) -> hashbrown::hash_map::Iter<'_, u32, Arc<dyn Disk>> {
+    pub fn iter(&self) -> hashbrown::hash_map::Iter<'_, u32, SyncDisk> {
         self.disks.iter()
     }
-    pub fn iter_mut(&mut self) -> hashbrown::hash_map::IterMut<'_, u32, Arc<dyn Disk>> {
+    pub fn iter_mut(&mut self) -> hashbrown::hash_map::IterMut<'_, u32, SyncDisk> {
         self.disks.iter_mut()
     }
 }

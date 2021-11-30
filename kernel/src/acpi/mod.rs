@@ -4,6 +4,7 @@
 // See LICENSE.txt and CREDITS.txt for details
 ///////////////////////////////////////////////////////////////////////////////L
 
+use alloc::boxed::Box;
 use acpi_crate::{AcpiTables, AcpiHandler, PhysicalMapping};
 use core::ptr::NonNull;
 use alloc::sync::Arc;
@@ -224,5 +225,37 @@ pub fn init() {
         ACPI_TABLES.try_init_once(|| acpi)
             .expect("acpi::init should only be called once");
         step.ok();
+    }
+
+    parse_aml()
+}
+
+fn parse_aml() {
+    AML_CONTEXT.try_init_once(|| {
+        Mutex::new(AmlContext::new(Box::new(AmlHandler {}), aml::DebugVerbosity::Scopes))
+    }).expect("parse_aml() can only be called once");
+
+    let acpi = ACPI_TABLES.get().unwrap();
+    let mut ctx = AML_CONTEXT.get().unwrap().lock();
+    if let Some(dsdt) = acpi.dsdt.as_ref() {
+        let ptr = (dsdt.address as u64 + PHYS_MEM_OFFSET) as *const u8;
+        let buffer = unsafe {
+            alloc::slice::from_raw_parts(ptr, dsdt.length as usize)
+        };
+        if let Err(e) = ctx.parse_table(buffer) {
+            panic!("{:?}", e)
+        }
+    }
+    for table in acpi.ssdts.iter() {
+        let ptr = (table.address as u64 + PHYS_MEM_OFFSET) as *const u8;
+        let buffer = unsafe {
+            alloc::slice::from_raw_parts(ptr, table.length as usize)
+        };
+        if let Err(e) = ctx.parse_table(buffer) {
+            panic!("{:?}", e)
+        }
+    }
+    if let Err(e) = ctx.initialize_objects() {
+        panic!("{:?}", e)
     }
 }

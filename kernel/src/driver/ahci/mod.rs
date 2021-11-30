@@ -6,16 +6,17 @@
 
 // TODO: check for redundancy with DiskService
 
+use alloc::sync::Arc;
 use self::ata::AtaDisk;
 use self::atapi::AtapiDisk;
 use self::hba::HbaMemory;
 use self::constants::HbaPortType;
 use x86_64::PhysAddr;
 use alloc::vec::Vec;
-use crate::PHYS_MEM_OFFSET;
-use core::ops::{Deref, DerefMut};
-use crate::sync::AsyncMutex;
-use alloc::sync::Arc;
+use crate::{AHCI_MEM_REGION, PCI_DEVICES, PHYS_MEM_OFFSET};
+use spin::Mutex;
+use tinypci::PciClass;
+use crate::device::physical::SyncDisk;
 
 /// Types related to the AHCI HBA (Host Bus Adapter)
 pub mod hba;
@@ -28,57 +29,38 @@ pub mod ata;
 /// `Disk` implementation for (S)ATAPI disks
 pub mod atapi;
 
-pub trait Disk {
-    /// Returns the ID for this disk
-    fn id(&self) -> usize;
-    /// Returns the type of disk this is
-    fn kind(&self) -> DiskType;
-    /// Returns the size of the disk in bytes, or `None` if the size is unknown
-    fn size(&self) -> Option<u64>;
-    /// Read data from the disk into the given buffer starting from block number `block`
-    fn read(&mut self, block: u64, buffer: &mut [u8]) -> Result<Option<usize>, anyhow::Error>;
-    /// Write data to the disk from the given buffer starting at block number `block`
-    fn write(&mut self, block: u64, buffer: &[u8]) -> Result<Option<usize>, anyhow::Error>;
-    /// Return this disk's block length in bytes
-    fn block_length(&mut self) -> Result<u32, anyhow::Error>;
-}
-
-static HBA: AsyncMutex<Option<&'static mut HbaMemory>> = AsyncMutex::new(None);
+static HBA: Mutex<Option<&'static mut HbaMemory>> = Mutex::new(None);
 
 /// Initialize the HBA and scan for disks
-pub async fn init(hba_mem_base: PhysAddr) {
+pub fn init() {
+    crate::both_println!("Initializing AHCI controller...");
+    let ahci_mem_region = AHCI_MEM_REGION.lock()
+        .expect("called ahci_init without AHCI_MEM_REGION initialized")
+        .range;
+    let ahci_mem_range = ahci_mem_region.start_addr()..ahci_mem_region.end_addr();
+    for addr in ahci_mem_range {
+        // zero out all AHCI memory
+        unsafe { *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0; }
+    }
+    crate::both_println!("AHCI memory initialized at {:x}..{:x}", ahci_mem_region.start_addr(), ahci_mem_region.end_addr());
+
+    let pci_lock = PCI_DEVICES.lock();
+    let ahci_controller_info = pci_lock.iter()
+        .find(|x| { x.class() == PciClass::MassStorage })
+        .expect("No AHCI controller found.");
+
+    let hba_mem_base = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
+
     let hba_mem = unsafe { &mut *((hba_mem_base.as_u64() + PHYS_MEM_OFFSET) as *mut HbaMemory) };
     hba_mem.init();
-    *HBA.lock().await = Some(hba_mem);
+    *HBA.lock() = Some(hba_mem);
     crate::both_println!("HBA initialized.");
-    rescan_disks().await;
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum DiskType {
-    SATA, SATAPI, IDE, Unknown
-}
-
-pub struct AhciDisks {
-    disks: Vec<Arc<dyn Disk>>
-}
-
-impl Deref for AhciDisks {
-    type Target = Vec<Arc<dyn Disk>>;
-
-    fn deref(&self) -> &Self::Target { &self.disks }
-}
-
-impl DerefMut for AhciDisks {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.disks }
-}
-
-pub static AHCI_DISKS: AsyncMutex<Option<AhciDisks>> = AsyncMutex::new(None);
-
-pub async fn rescan_disks() {
+pub async fn scan_disks() -> Vec<SyncDisk> {
     crate::both_println!("Scanning for disks...");
-    let disks: Vec<Arc<dyn Disk>> =  {
-        let mut lock = HBA.lock().await;
+    let disks: Vec<SyncDisk> =  {
+        let mut lock = HBA.lock();
         let hba_mem = lock.as_mut().unwrap();
         let pi = hba_mem.ports_impl.read();
         (0..hba_mem.ports.len())
@@ -88,10 +70,10 @@ pub async fn rescan_disks() {
                 let port_type = port.probe();
                 crate::serial_println!("disk-{}: {:?}", i, port_type);
 
-                let disk: Option<Arc<dyn Disk>> = match port_type {
+                let disk: Option<SyncDisk> = match port_type {
                     HbaPortType::SATA => {
                         match AtaDisk::new(i, port) {
-                            Ok(disk) => Some(Arc::new(disk)),
+                            Ok(disk) => Some(SyncDisk::new(Arc::new(disk))),
                             Err(err) => {
                                 crate::serial_println!("{}: {}", i, err);
                                 None
@@ -100,7 +82,7 @@ pub async fn rescan_disks() {
                     }
                     HbaPortType::SATAPI => {
                         match AtapiDisk::new(i, port) {
-                            Ok(disk) => Some(Arc::new(disk)),
+                            Ok(disk) => Some(SyncDisk::new(Arc::new(disk))),
                             Err(err) => {
                                 crate::serial_println!("{}: {}", i, err);
                                 None
@@ -113,7 +95,5 @@ pub async fn rescan_disks() {
             })
             .collect()
     };
-    let mut disks_lock = AHCI_DISKS.lock().await;
-    crate::both_println!("Done. Found {} disk(s).", disks.len());
-    *disks_lock = Some(AhciDisks { disks });
+    disks
 }

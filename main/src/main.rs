@@ -59,6 +59,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         port.write(0x2E);
     }
 
+    kernel::init_pci();
+    kernel::driver::ahci::init();
+
     kernel::arch::rtc::init_rtc();
 
     match kernel::time::get_current_time() {
@@ -89,51 +92,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
 async fn async_main() {
     let executor = kernel::task::executor::GLOBAL_EXECUTOR.get().unwrap().clone();
-    executor.spawn(Task::new(kernel::init_pci())).await;
-    executor.spawn(Task::new(unsafe { kernel::init_ahci() })).await;
-    executor.spawn(Task::new(kernel::parse_aml())).await;
     executor.spawn(Task::new(kernel::service::DiskService::init())).await;
     executor.spawn(Task::new(kernel::task::keyboard::process_scancodes())).await;
 
     both_println!("async_main exit");
     (*kernel::shell::SHELL.lock()).submit();
 }
-
-// #[derive(Parser)]
-// #[grammar = r###"
-// alpha = { 'a'..'z' | 'A'..'Z' }
-// digit = { '0'..'9' }
-// underscore = { "_" }
-// WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-// lparen = { "(" }
-// rparen = { ")" }
-// plus = { "+" }
-// minus = { "-" }
-// star = { "*" }
-// slash = { "/" }
-// equal = { "=" }
-// semicolon = { ";" }
-// period = { "." }
-//
-// lit_true = { "true" }
-// lit_false = { "false" }
-// lit_int = @{ digit+ }
-// lit_float = @{ digit+ ~ period ~ digit+ }
-// lit_bool = { lit_true | lit_false }
-// literal = { lit_int | lit_float | lit_bool }
-//
-// op = { plus | minus | star | slash }
-//
-// ident = @{ (alpha | underscore) ~ (alpha | digit | underscore)* }
-//
-// func_params = _{ lparen ~ ident* ~ rparen }
-// func_call = { ident ~ func_params }
-//
-// term = { ident | func_call | literal }
-// expr_right = _{ op ~ term }
-// expr = _{ term ~ op ~ term }
-//
-// //assign_statement = _{ "let" ~ ident ~ equal ~ expr ~ semicolon  }
-//
-// "###]
-// struct IdentParser;

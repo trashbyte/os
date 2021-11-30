@@ -69,7 +69,7 @@ pub mod service;
 /// Interactive shell system and parser
 pub mod shell;
 /// Syncrhonization primitives
-pub mod sync;
+//pub mod sync;
 /// General utilities
 pub mod util;
 /// Text-mode VGA output
@@ -80,22 +80,17 @@ pub mod task;
 pub mod time;
 
 use core::panic::PanicInfo;
-use x86_64::{VirtAddr, PhysAddr};
+use x86_64::VirtAddr;
 
 use crate::memory::{BootInfoFrameAllocator, AHCI_MEM_REGION};
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::instructions::port::Port;
-use tinypci::{PciDeviceInfo, PciClass};
+use tinypci::PciDeviceInfo;
 use alloc::vec::Vec;
 use crate::vga_buffer::Color;
 use bootloader::bootinfo::{MemoryRegionType, MemoryRegion, FrameRange};
-use crate::driver::ahci;
 use crate::driver::ahci::constants::AHCI_MEMORY_SIZE;
-use alloc::boxed::Box;
-use crate::acpi::{AML_CONTEXT, AmlHandler, ACPI_TABLES};
-use aml::{AmlContext, DebugVerbosity};
 use spin::Mutex;
-use crate::sync::AsyncMutex;
 use core::sync::atomic::Ordering;
 
 /// Start address where physical memory is identity mapped in virtual memory
@@ -237,9 +232,9 @@ pub fn init_memory(phys_mem_offset: VirtAddr) -> MemoryInitResults {
     MemoryInitResults { mapper, frame_allocator }
 }
 
-pub static PCI_DEVICES: AsyncMutex<Vec<PciDeviceInfo>> = AsyncMutex::new(Vec::new());
+pub static PCI_DEVICES: Mutex<Vec<PciDeviceInfo>> = Mutex::new(Vec::new());
 
-pub async fn init_pci() {
+pub fn init_pci() {
     both_println!("Scanning for PCI devices");
     let mut pci_infos = tinypci::brute_force_scan();
     if pci_infos.is_empty() {
@@ -261,7 +256,7 @@ pub async fn init_pci() {
             }
         }
     }
-    let mut lock = PCI_DEVICES.lock().await;
+    let mut lock = PCI_DEVICES.lock();
     lock.clear();
     lock.append(&mut pci_infos);
     drop(lock);
@@ -316,75 +311,6 @@ pub fn init_memory_map(boot_info: &'static bootloader::BootInfo) {
     //let fs = unsafe { Arc::new(Ext2Filesystem::read_from(&block_dev).unwrap()) };
     //unsafe { *crate::fs::vfs::GLOBAL_VFS.lock() = Some(VFS::init(fs)); }
 //}
-
-pub async unsafe fn init_ahci() {
-    crate::both_println!("Initializing AHCI controller...");
-    let ahci_mem_region = AHCI_MEM_REGION.lock()
-        .expect("called ahci_init without AHCI_MEM_REGION initialized")
-        .range;
-    let ahci_mem_range = ahci_mem_region.start_addr()..ahci_mem_region.end_addr();
-    for addr in ahci_mem_range {
-        // zero out all AHCI memory
-        unsafe { *((addr + PHYS_MEM_OFFSET) as *mut u8) = 0; }
-    }
-    both_println!("AHCI memory initialized at {:x}..{:x}", ahci_mem_region.start_addr(), ahci_mem_region.end_addr());
-
-    let mut i = 0;
-    let pci_lock = loop {
-        let pci_lock = PCI_DEVICES.lock().await;
-        if !pci_lock.is_empty() { break pci_lock }
-        drop(pci_lock);
-        i += 1;
-        if i >= 10 {
-            panic!("Exhausted all retries trying to get PCI devices");
-        }
-    };
-
-    let ahci_controller_info = pci_lock.iter()
-        .find(|x| { x.class() == PciClass::MassStorage })
-        .expect("No AHCI controller found.");
-
-    let ahci_hba_addr = PhysAddr::new((ahci_controller_info.bars[5] & 0xFFFFFFF0) as u64);
-    ahci::init(ahci_hba_addr).await;
-}
-
-pub async fn parse_aml() {
-    AML_CONTEXT.try_init_once(|| {
-        Mutex::new(AmlContext::new(Box::new(AmlHandler {}), DebugVerbosity::Scopes))
-    }).expect("parse_aml() can only be called once");
-
-    let mut loops = 0;
-    let acpi = loop {
-        let tables = ACPI_TABLES.get();
-        if let Some(acpi) = tables { break acpi }
-        loops += 1;
-        if loops == 10 {
-            panic!("Exhausted all retries trying to get ACPI tables");
-        }
-    };
-    let mut ctx = AML_CONTEXT.get().unwrap().lock();
-    if let Some(dsdt) = acpi.dsdt.as_ref() {
-        let ptr = (dsdt.address as u64 + PHYS_MEM_OFFSET) as *const u8;
-        let buffer = unsafe {
-            alloc::slice::from_raw_parts(ptr, dsdt.length as usize)
-        };
-        if let Err(e) = ctx.parse_table(buffer) {
-            panic!("{:?}", e)
-        }
-    }
-    for table in acpi.ssdts.iter() {
-        let ptr = (table.address as u64 + PHYS_MEM_OFFSET) as *const u8;
-        let buffer = unsafe {
-            alloc::slice::from_raw_parts(ptr, table.length as usize)
-        };
-        if let Err(e) = ctx.parse_table(buffer) {
-            panic!("{:?}", e)
-        }
-    }
-    if let Err(e) = ctx.initialize_objects() {
-        panic!("{:?}", e)
-    }
-}
 
 pub fn shutdown() {
     // TODO: proper ACPI shutdown

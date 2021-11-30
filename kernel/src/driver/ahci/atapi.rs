@@ -9,9 +9,8 @@
 use core::ptr;
 use byteorder::{ByteOrder, BigEndian};
 use super::hba::HbaPort;
-use super::Disk;
+use crate::device::physical::{Disk, PhysicalDeviceType};
 use alloc::boxed::Box;
-use crate::driver::ahci::DiskType;
 
 const SCSI_READ_CAPACITY: u8 = 0x25;
 const SCSI_READ10: u8 = 0x28;
@@ -59,7 +58,7 @@ impl AtapiDisk {
 
 impl Disk for AtapiDisk {
     fn id(&self) -> usize { self.id }
-    fn kind(&self) -> DiskType { DiskType::SATAPI }
+    fn kind(&self) -> PhysicalDeviceType { PhysicalDeviceType::SatapiDrive }
 
     fn size(&self) -> Option<u64> {
         self.size
