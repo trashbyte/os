@@ -34,7 +34,7 @@ impl SyncDisk {
 unsafe impl Send for SyncDisk {}
 unsafe impl Sync for SyncDisk {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PhysicalDeviceType {
     FloppyDrive,
     IdeDrive,
